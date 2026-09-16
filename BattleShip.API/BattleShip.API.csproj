@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\BattleShip.Models\BattleShip.Models.csproj" />
+  </ItemGroup>
+
+</Project>

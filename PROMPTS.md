@@ -1,0 +1,131 @@
+# Journal des étapes et traçabilité
+
+## Statut des références
+
+Ce document récapitule les demandes fonctionnelles et leur mise en œuvre. Il ne prétend pas reproduire des échanges inexistants ni un historique déjà committé.
+
+Au moment de sa rédaction, `main` n’a aucun commit. Chaque étape a été enregistrée dans un arbre Git à l’aide d’un index séparé. Les références `refs/snapshots/battleship/step-N` préservent ces arbres localement, sans modifier l’index de travail de l’utilisateur. **Un SHA d’arbre n’est pas un SHA de commit.**
+
+| Étape | Message de commit prévu | Arbre vérifiable |
+| --- | --- | --- |
+| 1 | `chore: initialize .NET 10 solution with four projects` | `1a2510cd2cfa25ce8246b2c79ff4957d36d408b2` |
+| 2 | `feat(models): implement battleship engine and masked game contracts` | `1256a4ac032b5b9a191b077dbff83e6ba789955b` |
+| 3 | `test(models): cover placement masking and atomic turns` | `3f54132edd14b6e5ad927618d54c7fd820ddd6ac` |
+| 4 | `feat(api): add validated HTTP endpoints and integration tests` | `72d00cac37c32be8a0330e2ba9e9b48c17a37247` |
+| 5 | `feat(grpc): expose masked game status over grpc-web` | `49082f875abae06662f204193099503802e33024` |
+| 6 | `feat(app): add interactive Blazor game and transport clients` | `6a5cc1847ed249f0f7d9447fada79331a6422813` |
+| 7 | `docs: document setup architecture and implementation reviews` | `refs/snapshots/battleship/step-7` |
+
+L’arbre final inclut ce document : son SHA ne peut pas être inscrit dans son propre contenu sans changer cet arbre. Sa référence locale permet de le retrouver après enregistrement.
+
+## Étape 1 — Initialiser une solution indépendante du poste
+
+**Demande reformulée :** préparer une solution .NET 10 / C# 14 avec Models, API, App et Tests, des références explicites et des exclusions Git adaptées.
+
+**Réalisation :** solution `.slnx`, SDK sélectionné par `global.json`, propriétés partagées et infrastructure xUnit. Le dépôt existait déjà sur `main`, sans commit : il n’a pas été réinitialisé.
+
+**Vérification :** les quatre projets compilent ; aucun test métier n’existe encore à cette étape. Une découverte vide n’est pas présentée comme un succès fonctionnel.
+
+## Étape 2 — Construire le moteur et les frontières de données
+
+**Demande reformulée :** placer la flotte standard, jouer un tour complet, refuser les coups invalides et ne pas révéler les navires adverses.
+
+**Réalisation :** `Board`, `Ship`, `Game` et contrats de données. Les candidats de placement sont énumérés avant sélection ; l’ordinateur utilise une permutation des coordonnées. `Game` synchronise lectures et tours, puis construit des DTO détachés. L’adversaire reste masqué même à la fin.
+
+**Vérification :** compilation du domaine sans dépendance externe. Les propriétés comportementales sont testées à l’étape suivante.
+
+## Étape 3 — Prouver les invariants du moteur
+
+**Demande reformulée :** tester les placements, les grilles masquées et le refus d’un coup hors grille ou déjà joué.
+
+**Réalisation :** tests xUnit déterministes, incluant aussi les deux issues, l’absence de mutation des instantanés et vingt tirs concurrents sur une même case.
+
+**Vérification :** **21 cas réussis**. Le test de placement parcourt 200 graines, et le test de déroulement complet en parcourt 20.
+
+**Adaptation du découpage :** les tests FluentValidation et d’intégration ne peuvent pas compiler avant leurs implémentations. Ils sont donc ajoutés avec les étapes 4 et 5, plutôt que laissés en échec de compilation dans ce commit.
+
+## Étape 4 — Exposer les opérations HTTP validées
+
+**Demande reformulée :** fournir les trois endpoints Minimal API, TypedResults, FluentValidation, CORS et OpenAPI.
+
+**Réalisation :** stockage singleton borné avec expiration absolue, validators, Problem Details et limiteur par IP. Les paramètres obligatoires des constructeurs JSON sont respectés pour ne pas transformer un champ absent en coordonnée zéro.
+
+**Retour de vérification réel :** une première exécution a produit **7 échecs sur 54 cas**. En mode Development, la liaison JSON lançait `BadHttpRequestException` et le gestionnaire d’exceptions général renvoyait 500. La configuration explicite `RouteHandlerOptions.ThrowOnBadRequest = false` restaure les 400 attendus.
+
+**Vérification finale de l’étape :** **54 cas réussis**, notamment requêtes JSON incomplètes, refus sans mutation, CORS et document OpenAPI.
+
+## Étape 5 — Ajouter une seconde représentation du même état
+
+**Demande reformulée :** fournir un contrat Protobuf, un service `GetGameStatus`, gRPC-Web et une gestion explicite des erreurs.
+
+**Réalisation :** messages typés, validation de l’UUID, mapping depuis `Game.GetState()`, `UseGrpcWeb`, `EnableGrpcWeb` et exposition des en-têtes CORS nécessaires. Aucun objet interne du moteur n’est sérialisé.
+
+**Vérification :** **65 cas réussis**, dont des appels via `GrpcWebHandler` en modes binaire et texte, la comparaison HTTP/gRPC et les codes `InvalidArgument` / `NotFound`.
+
+## Étape 6 — Permettre une partie complète dans le navigateur
+
+**Demande reformulée :** afficher deux grilles, tirer au clic, suivre les chargements et les résultats, intégrer les clients HTTP et gRPC-Web.
+
+**Réalisation :** interface française responsive, composant de grille commun, contrôles clavier, derniers tirs et légende. Un lien de partie permet la reprise après rechargement. Les opérations utilisent des délais et un jeton d’annulation ; une erreur après un tir impose une synchronisation, sans rejeu du POST.
+
+**Adaptation :** le namespace du contrat `BattleShip.Grpc` peut masquer le namespace de la bibliothèque depuis Razor. L’import est explicitement `global::Grpc.Core`.
+
+**Vérification :** compilation de la solution sans avertissement, 65 cas xUnit conservés et parcours Chrome automatisé réussi sur le serveur de développement puis sur la publication. La réponse perdue après un tir accepté a été simulée : reprise correcte avec un seul tour supplémentaire. Aucun échec JavaScript non géré observé. Le scénario navigateur est un contrôle externe, pas un test inclus dans la suite xUnit.
+
+## Étape 7 — Documenter les décisions et les limites
+
+**Demande reformulée :** livrer un guide d’installation, ce journal, trois revues et un ADR avec des références vérifiables.
+
+**Réalisation :** `README.md`, `PROMPTS.md`, `REVUE-IA.md` et `docs/adr/ADR-001-ARCHITECTURE-GRPC-HTTP.md`. Les limites de persistance, d’authentification, de publication et d’expiration sont explicites. Les consignes de vérification sont également conservées dans `AGENTS.md`.
+
+## Créer les sept commits, dans l’ordre
+
+Ces commandes sont prévues pour **ce dépôt local encore sans commit**. Les références d’instantanés personnalisées ne sont pas transférées par un clone ordinaire. Après création des commits, l’historique normal suffit et peut être partagé comme tout dépôt Git.
+
+Avant de commencer, vérifier que l’index normal ne contient aucun changement personnel :
+
+```bash
+git status --short --branch
+git diff --cached --stat
+git for-each-ref --format='%(refname) %(objecttype) %(objectname)' refs/snapshots/battleship/
+```
+
+`git read-tree` remplace le contenu de l’index, **sans toucher aux fichiers de travail**. Ne pas ajouter `-u`. Ne pas exécuter ces commandes si vous avez préparé d’autres changements dans l’index. Entre les premiers commits, `git status` montrera les étapes futures encore présentes dans les fichiers : c’est attendu. Ne pas utiliser `git add .` entre les étapes, car cela regrouperait toute la version finale.
+
+```bash
+git read-tree refs/snapshots/battleship/step-1 &&
+git commit -m "chore: initialize .NET 10 solution with four projects" &&
+git read-tree refs/snapshots/battleship/step-2 &&
+git commit -m "feat(models): implement battleship engine and masked game contracts" &&
+git read-tree refs/snapshots/battleship/step-3 &&
+git commit -m "test(models): cover placement masking and atomic turns" &&
+git read-tree refs/snapshots/battleship/step-4 &&
+git commit -m "feat(api): add validated HTTP endpoints and integration tests" &&
+git read-tree refs/snapshots/battleship/step-5 &&
+git commit -m "feat(grpc): expose masked game status over grpc-web" &&
+git read-tree refs/snapshots/battleship/step-6 &&
+git commit -m "feat(app): add interactive Blazor game and transport clients" &&
+git read-tree refs/snapshots/battleship/step-7 &&
+git commit -m "docs: document setup architecture and implementation reviews"
+```
+
+Arrêter la séquence si un commit échoue. Ne pas passer à l’étape suivante avant d’avoir résolu l’erreur ; ne pas contourner les hooks. Aucune commande de push n’est nécessaire pour créer cet historique.
+
+### Retrouver les véritables SHA des commits
+
+Après exécution :
+
+```bash
+git log --reverse --format='%h %s'
+git status --short
+```
+
+Pour relier un sujet à un SHA exact et vérifier les preuves de revue :
+
+```bash
+git log --format='%H %s' --fixed-strings --grep='feat(api): add validated HTTP endpoints and integration tests'
+git diff-tree --stat refs/snapshots/battleship/step-3 refs/snapshots/battleship/step-4
+git show refs/snapshots/battleship/step-4:BattleShip.API/Program.cs
+```
+
+Les messages identifient les commits correspondants après leur création ; les arbres fournissent une preuve de contenu dès maintenant. Aucun auteur, date de commit ou SHA de commit n’a été fabriqué.

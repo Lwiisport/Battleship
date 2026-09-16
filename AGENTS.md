@@ -24,3 +24,15 @@
 
 - Procéder étape par étape et fournir la commande de commit à l’utilisateur sans l’exécuter.
 - Ne pas inventer de hashs de commits pour les livrables de traçabilité.
+
+## Vérifications complémentaires
+
+- Suite livrée : 65 cas xUnit, incluant les transports HTTP et gRPC-Web ; aucun test navigateur n’est inclus dans ce nombre.
+- Audit : `dotnet list BattleShip.slnx package --vulnerable --include-transitive`.
+- Publication : `dotnet publish BattleShip.API/BattleShip.API.csproj --configuration Release` puis `dotnet publish BattleShip.App/BattleShip.App.csproj --configuration Release`.
+- Le workload `wasm-tools` est optionnel ; l’application publiée a été vérifiée dans Chrome sans celui-ci.
+- Le client utilise `BattleShip.App/wwwroot/appsettings.json` pour `ApiBaseUrl` ; cette configuration est publique.
+- Le namespace Protobuf `BattleShip.Grpc` nécessite `global::Grpc.Core` dans les imports Razor concernés.
+- En Development, configurer `RouteHandlerOptions.ThrowOnBadRequest = false` évite que le gestionnaire général d’exceptions transforme les erreurs de liaison JSON en 500.
+- Les arbres locaux `refs/snapshots/battleship/step-N` préservent les étapes sans commits ; les commandes de matérialisation figurent dans `PROMPTS.md`.
+- Le stock de parties est borné, non persistant et mono-instance ; l’identifiant de partie sert de lien d’accès, pas d’authentification.

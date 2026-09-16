@@ -1,0 +1,120 @@
+# Revues de code argumentées
+
+Ces trois revues évaluent le code et des alternatives de conception. Elles ne constituent ni une approbation humaine, ni une certification de sécurité. Les décisions sont reliées aux tests et aux instantanés réellement enregistrés.
+
+Les messages de commit cités sont les sujets prévus dans [PROMPTS.md](PROMPTS.md). À la rédaction, les commits n’ont pas encore été exécutés ; les hashes ci-dessous désignent des **arbres Git**, jamais des commits inventés. Après création de l’historique, `git log --fixed-strings --grep='<sujet>'` retrouve le commit correspondant.
+
+## Revue 1 — Accepté : construire l’état adverse masqué sur le serveur
+
+### Code examiné
+
+- `BattleShip.Models/Board.cs` : `ToGrid(bool revealShips)`.
+- `BattleShip.Models/Game.cs` : `Snapshot()` et verrou commun de lecture/écriture.
+- `BattleShip.API/Services/GameGrpcService.cs` : mapping du DTO, et non du plateau interne.
+
+### Décision
+
+**Accepté.** Le moteur possède les navires mais ne renvoie à l’API qu’un instantané de cellules. Toute case adverse non visée reste `Unknown`, y compris lorsque la partie est terminée. Les DTO n’ont pas de liste cachée de positions ennemies ni d’identifiant permettant de reconstruire un navire non découvert.
+
+Le client reçoit naturellement les positions de toutes les cellules de la grille ; ce ne sont pas des positions révélées de navires. L’information sensible est l’occupation d’une case non visée, jamais transmise. Une case `Sunk` ne révèle que des positions déjà touchées.
+
+Les tableaux du DTO sont modifiables par leur destinataire mais détachés de l’état réel. Le test de mutation du DTO vérifie cette frontière. Le verrou autour du tour complet évite qu’une lecture observe le tir du joueur sans la réponse automatique de l’ordinateur.
+
+### Preuves
+
+- `BoardTests.Hidden_grid_only_reveals_shots_and_sunk_cells`.
+- `GameTests.New_game_reveals_only_player_fleet`.
+- `GameTests.Returned_arrays_cannot_mutate_the_game`.
+- `GrpcGameTests.Grpc_web_returns_the_same_masked_state_as_http`, en deux modes de transport.
+
+Références :
+
+| Sujet prévu | Arbre |
+| --- | --- |
+| `feat(models): implement battleship engine and masked game contracts` | `1256a4ac032b5b9a191b077dbff83e6ba789955b` |
+| `test(models): cover placement masking and atomic turns` | `3f54132edd14b6e5ad927618d54c7fd820ddd6ac` |
+| `feat(grpc): expose masked game status over grpc-web` | `49082f875abae06662f204193099503802e33024` |
+
+### Réserve
+
+Le masquage ne fournit pas une authentification. L’identifiant de partie est un lien d’accès : un tiers qui le connaît peut jouer à la place du joueur. CORS ne corrige pas cette limite et ne doit pas être présenté comme une autorisation utilisateur.
+
+## Revue 2 — Adapté : traiter les entrées JSON invalides comme des erreurs client
+
+### Code examiné
+
+- `BattleShip.API/Program.cs` : options JSON et `RouteHandlerOptions`.
+- `BattleShip.API/Validation/GameValidators.cs`.
+- `BattleShip.API/Endpoints/GameEndpoints.cs`.
+- `BattleShip.Tests/HttpGameTests.cs`.
+
+### Problème constaté
+
+Deux frontières doivent être distinguées :
+
+1. Un JSON peut être syntaxiquement illisible ou manquer un paramètre de constructeur obligatoire. FluentValidation ne reçoit alors aucun DTO exploitable.
+2. Un DTO valide au sens JSON peut contenir un nom vide ou des coordonnées hors grille. FluentValidation doit le refuser.
+
+Sans exigence des paramètres de constructeur, `{ "row": 0 }` risquerait d’utiliser la valeur par défaut de `column` et de tirer en `(0, 0)`. La configuration `RespectRequiredConstructorParameters = true` empêche cette interprétation.
+
+La première exécution de l’intégration a réellement révélé **7 échecs sur 54 tests** : en mode Development, `BadHttpRequestException` remontait au gestionnaire général et devenait une réponse 500. Un journal détaillé a confirmé l’origine dans `RequestDelegateFactory` lors de la lecture du corps JSON.
+
+### Décision
+
+**Adapté.** `RouteHandlerOptions.ThrowOnBadRequest = false` laisse la liaison Minimal API renvoyer 400 pour les erreurs de corps, quel que soit l’environnement. Les validators restent responsables des valeurs métier et renvoient `TypedResults.ValidationProblem`. Les tirs répétés ou après la fin renvoient 409, distinct d’une erreur de coordonnées.
+
+Le moteur conserve ses propres gardes : un client qui contourne la validation HTTP n’obtient pas un moteur permissif.
+
+### Preuves
+
+- `HttpGameTests.Invalid_creation_returns_bad_request` : corps absent de champs, `null`, JSON mal formé, nom invalide.
+- `HttpGameTests.Invalid_fire_returns_bad_request_and_does_not_mutate_game` : comparaison de l’état avant et après le refus.
+- `ValidationTests.Fire_rejects_out_of_bounds_coordinates`.
+- Suite passée de 47 réussites / 7 échecs à **54 réussites / 0 échec** après la correction.
+
+Référence : `feat(api): add validated HTTP endpoints and integration tests`, arbre `72d00cac37c32be8a0330e2ba9e9b48c17a37247`.
+
+### Réserve
+
+La correction intermédiaire défaillante n’a pas été enregistrée dans un commit distinct : elle a été corrigée avant la capture atomique de l’étape 4. Le résultat de test ci-dessus décrit une exécution de développement, pas un ancien commit fictif.
+
+## Revue 3 — Rejeté : rejouer automatiquement un tir après une erreur réseau
+
+### Alternative examinée
+
+Une stratégie générique de nouvelle tentative pourrait réémettre `POST /fire` dès qu’une requête expire ou que sa réponse est perdue. C’est une alternative évaluée et non retenue, **pas un code prétendument retiré d’un ancien commit**.
+
+### Décision
+
+**Rejeté.** Une absence de réponse ne prouve pas que le serveur n’a pas appliqué le tir. Un rejeu automatique masque cette incertitude et peut produire des refus 409 ou des messages incohérents. Changer de coordonnée lors d’une nouvelle tentative serait plus grave, car cela pourrait jouer un second tour non demandé.
+
+L’implémentation conserve un seul POST, puis active `needsSync` en cas d’erreur. Les cases sont désactivées jusqu’à une lecture HTTP ou gRPC-Web réussie. Le serveur refuse de son côté les coordonnées déjà visées et verrouille l’ensemble du tour.
+
+### Code retenu en remplacement
+
+- `BattleShip.App/Pages/Home.razor` : `Fire`, `Run`, `Refresh`, `needsSync`.
+- `BattleShip.App/Services/GameHttpClient.cs` : une seule requête de tir, avec délai d’attente.
+- `BattleShip.Models/Game.cs` : exclusion mutuelle et refus métier avant progression du tour.
+
+### Preuves
+
+- `GameTests.Duplicate_turn_does_not_trigger_a_computer_shot`.
+- `GameTests.Concurrent_identical_shots_only_apply_one_turn` : vingt appels, un seul tour accepté.
+- `HttpGameTests.Duplicate_fire_returns_conflict_without_computer_turn`.
+- Contrôle Chrome externe : interception d’un tir, transfert réel au serveur, puis suppression de la réponse côté navigateur. La grille s’est bloquée ; l’actualisation gRPC-Web a retrouvé exactement deux cases adverses visées après deux tirs, sans troisième tour. Le contrôle a réussi en développement et sur la publication.
+
+Références :
+
+| Sujet prévu | Arbre |
+| --- | --- |
+| `test(models): cover placement masking and atomic turns` | `3f54132edd14b6e5ad927618d54c7fd820ddd6ac` |
+| `feat(api): add validated HTTP endpoints and integration tests` | `72d00cac37c32be8a0330e2ba9e9b48c17a37247` |
+| `feat(app): add interactive Blazor game and transport clients` | `6a5cc1847ed249f0f7d9447fada79331a6422813` |
+
+### Réserve
+
+Le contrôle navigateur n’est pas inclus dans les 65 cas xUnit du dépôt. Pour une évolution vers des commandes métier réessayables à grande échelle, une clé d’idempotence explicite, persistée avec le résultat du tour, serait préférable à un simple mécanisme de nouvelle tentative.
+
+## Bilan
+
+Le code accepté protège la frontière des données ; le code adapté corrige un défaut reproduit dans les tests ; l’alternative rejetée évite de confondre une réponse perdue avec une commande non exécutée. Les limites restantes sont assumées et documentées : stockage mémoire mono-instance, absence de comptes utilisateurs, adversaire aléatoire sans stratégie de poursuite et contrôle navigateur externe.

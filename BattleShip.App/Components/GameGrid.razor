@@ -1,0 +1,71 @@
+<table class="game-grid" aria-label="@Title">
+    <caption class="sr-only">@Title. Lignes A à J, colonnes 1 à 10.</caption>
+    <thead>
+        <tr>
+            <td></td>
+            @for (var column = 1; column <= Board.Size; column++)
+            {
+                <th scope="col">@column</th>
+            }
+        </tr>
+    </thead>
+    <tbody>
+        @for (var row = 0; row < Board.Size; row++)
+        {
+            <tr>
+                <th scope="row">@((char)('A' + row))</th>
+                @for (var column = 0; column < Board.Size; column++)
+                {
+                    var cell = Cells[row * Board.Size + column];
+                    var position = new Position(cell.Row, cell.Column);
+                    var classes = $"cell cell-{cell.State.ToString().ToLowerInvariant()} {(LastShot == position ? "last-shot" : "")}";
+                    <td>
+                        @if (IsOpponent)
+                        {
+                            <button type="button" class="@classes" aria-label="@Label(cell)" title="@Label(cell)"
+                                    disabled="@(!CanFire || cell.State != CellState.Unknown)"
+                                    @onclick="() => OnFire.InvokeAsync(position)">
+                                <span aria-hidden="true">@Symbol(cell.State)</span>
+                            </button>
+                        }
+                        else
+                        {
+                            <span class="@classes" title="@Label(cell)">
+                                <span aria-hidden="true">@Symbol(cell.State)</span>
+                                <span class="sr-only">@Label(cell)</span>
+                            </span>
+                        }
+                    </td>
+                }
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<CellDto> Cells { get; set; } = [];
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public bool IsOpponent { get; set; }
+    [Parameter] public bool CanFire { get; set; }
+    [Parameter] public Position? LastShot { get; set; }
+    [Parameter] public EventCallback<Position> OnFire { get; set; }
+
+    private static string Symbol(CellState state) => state switch
+    {
+        CellState.Ship => "#",
+        CellState.Miss => "·",
+        CellState.Hit or CellState.Sunk => "×",
+        _ => ""
+    };
+
+    private static string Label(CellDto cell) => $"{(char)('A' + cell.Row)}{cell.Column + 1} : {cell.State switch
+    {
+        CellState.Unknown => "non explorée",
+        CellState.Water => "eau",
+        CellState.Ship => "navire",
+        CellState.Miss => "à l’eau",
+        CellState.Hit => "touché",
+        CellState.Sunk => "coulé",
+        _ => "inconnu"
+    }}";
+}

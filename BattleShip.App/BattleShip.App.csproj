@@ -5,12 +5,20 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.31.1" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.71.0" />
+    <PackageReference Include="Grpc.Net.Client.Web" Version="2.71.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.71.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.11" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.11" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\BattleShip.Models\BattleShip.Models.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="../BattleShip.API/Protos/game.proto" Link="Protos/game.proto" GrpcServices="Client" />
   </ItemGroup>
 
 </Project>

@@ -1,7 +1,234 @@
 ﻿@page "/"
+@implements IDisposable
+@using System.Text.Json
+@using global::Grpc.Core
+@inject GameHttpClient Http
+@inject GameGrpcClient GrpcClient
+@inject NavigationManager Navigation
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Bataille navale — Poste de commandement</PageTitle>
 
-<h1>Hello, world!</h1>
+<section class="hero">
+    <div>
+        <p class="eyebrow">OPÉRATION GRAND LARGE</p>
+        <h1>À vous de viser.</h1>
+        <p class="intro">Deux flottes. Un océan. Repérez les cinq navires adverses avant de perdre les vôtres.</p>
+    </div>
+    <div class="mission-tag"><strong>10 × 10</strong><span>ZONE D’OPÉRATION</span></div>
+</section>
 
-Welcome to your new app.
+<section class="panel controls" aria-label="Commandes de la partie">
+    <form @onsubmit="StartGame" @onsubmit:preventDefault>
+        <div class="field">
+            <label for="player-name">Nom du commandant</label>
+            <input id="player-name" @bind="playerName" @bind:event="oninput" required maxlength="40"
+                   autocomplete="nickname" placeholder="Votre nom" disabled="@busy" />
+        </div>
+        <button type="submit" class="primary" disabled="@(busy || string.IsNullOrWhiteSpace(playerName))">Nouvelle partie</button>
+    </form>
+    @if (game is not null)
+    {
+        <div class="refresh-controls">
+            <button type="button" class="secondary" disabled="@busy" @onclick="() => Refresh(false)">Actualiser HTTP</button>
+            <button type="button" class="secondary" disabled="@busy" @onclick="() => Refresh(true)">Actualiser gRPC-Web</button>
+        </div>
+    }
+</section>
+
+@if (error is not null)
+{
+    <div class="notice error" role="alert">@error</div>
+}
+@if (needsSync)
+{
+    <div class="notice warning" role="status">Synchronisez la partie avec l’un des boutons d’actualisation avant de tirer à nouveau.</div>
+}
+
+@if (game is null)
+{
+    <section class="panel welcome" aria-live="polite">
+        <span class="eyebrow">PRÉPAREZ VOTRE FLOTTE</span>
+        <h2>@(busy ? "Déploiement en cours…" : "Prenez le commandement")</h2>
+        <p>Entrez votre nom puis lancez une partie. Les navires sont placés automatiquement, sans chevauchement.</p>
+        <p>Un clic sur la grille adverse déclenche votre tir puis la réponse de l’ordinateur.</p>
+    </section>
+}
+else
+{
+    <section class="status-bar" aria-live="polite" aria-atomic="true">
+        <div>
+            <span class="eyebrow">@game.PlayerName · TOUR @game.TurnNumber</span>
+            <h2>@StatusText</h2>
+        </div>
+        <span class="status-pill @(game.Status == GameStatus.InProgress ? "" : "finished")">
+            @(busy ? "Synchronisation…" : game.Status == GameStatus.InProgress ? "EN COURS" : "TERMINÉE")
+        </span>
+    </section>
+    <div class="boards" aria-busy="@(busy ? "true" : "false")">
+        <section class="panel board-panel">
+            <div class="board-heading"><div><p class="eyebrow">DÉFENSE</p><h2>Votre flotte</h2></div>
+                <span>@Remaining(game.PlayerGrid) / 17 cases intactes</span></div>
+            <GameGrid Cells="game.PlayerGrid" Title="Grille joueur" LastShot="game.LastComputerShot?.Position" />
+            <p class="shot-report">@ShotText("Ordinateur", game.LastComputerShot)</p>
+        </section>
+        <section class="panel board-panel enemy-panel">
+            <div class="board-heading"><div><p class="eyebrow">OFFENSIVE</p><h2>Flotte adverse</h2></div>
+                <span>@Impacts(game.OpponentGrid) / 17 impacts</span></div>
+            <GameGrid Cells="game.OpponentGrid" Title="Grille adverse" IsOpponent="true"
+                      CanFire="@(!busy && !needsSync && game.Status == GameStatus.InProgress)"
+                      LastShot="game.LastPlayerShot?.Position" OnFire="Fire" />
+            <p class="shot-report">@ShotText("Votre tir", game.LastPlayerShot)</p>
+        </section>
+    </div>
+    <div class="legend" aria-label="Légende des grilles">
+        <span><i class="swatch cell-ship">#</i> Navire</span>
+        <span><i class="swatch cell-miss">·</i> À l’eau</span>
+        <span><i class="swatch cell-hit">×</i> Touché</span>
+        <span><i class="swatch cell-sunk">×</i> Coulé</span>
+        <span class="sync-label" role="status">Dernière synchronisation : @transport</span>
+    </div>
+}
+
+<section class="fleet-section" aria-label="Composition de la flotte">
+    <p class="eyebrow">VOTRE ESCADRE · 5 NAVIRES · 17 CASES</p>
+    <div class="fleet-list">
+        @foreach (var ship in Board.Fleet)
+        {
+            <div class="fleet-item"><span>@ShipName(ship.Kind)</span><span class="ship-size" aria-label="@($"{ship.Size} cases")">@(new string('▪', ship.Size))</span></div>
+        }
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "game")] public string? GameId { get; set; }
+
+    private readonly CancellationTokenSource lifetime = new();
+    private GameStateDto? game;
+    private string playerName = "";
+    private string? error;
+    private string? loadedGameId;
+    private string transport = "HTTP";
+    private bool busy;
+    private bool needsSync;
+
+    private string StatusText => game?.Status switch
+    {
+        GameStatus.PlayerWon => "Victoire ! La flotte adverse est coulée.",
+        GameStatus.ComputerWon => "Défaite. Votre flotte a été coulée.",
+        _ when busy => "Transmission en cours…",
+        _ when needsSync => "Actualisation nécessaire",
+        _ => "Votre tour : choisissez une case adverse."
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (GameId == loadedGameId)
+            return;
+        loadedGameId = GameId;
+        game = null;
+        if (string.IsNullOrEmpty(GameId))
+            return;
+        if (!Guid.TryParse(GameId, out var id) || id == Guid.Empty)
+        {
+            error = "Le lien de cette partie est invalide.";
+            return;
+        }
+        await Run(async () =>
+        {
+            game = await Http.GetAsync(id, lifetime.Token);
+            playerName = game.PlayerName;
+            needsSync = false;
+            transport = "HTTP";
+        });
+    }
+
+    private Task StartGame() => Run(async () =>
+    {
+        game = await Http.CreateAsync(playerName.Trim(), lifetime.Token);
+        playerName = game.PlayerName;
+        needsSync = false;
+        transport = "HTTP";
+        loadedGameId = game.Id.ToString();
+        Navigation.NavigateTo($"/?game={loadedGameId}", replace: true);
+    });
+
+    private Task Fire(Position position)
+    {
+        if (game is null || needsSync || game.Status != GameStatus.InProgress)
+            return Task.CompletedTask;
+        var id = game.Id;
+        return Run(async () =>
+        {
+            game = await Http.FireAsync(id, position, lifetime.Token);
+            transport = "HTTP";
+        }, changesGame: true);
+    }
+
+    private Task Refresh(bool useGrpc)
+    {
+        if (game is null)
+            return Task.CompletedTask;
+        var id = game.Id;
+        return Run(async () =>
+        {
+            game = useGrpc ? await GrpcClient.GetAsync(id, lifetime.Token) : await Http.GetAsync(id, lifetime.Token);
+            needsSync = false;
+            transport = useGrpc ? "gRPC-Web" : "HTTP";
+        });
+    }
+
+    private async Task Run(Func<Task> action, bool changesGame = false)
+    {
+        if (busy)
+            return;
+        busy = true;
+        error = null;
+        try
+        {
+            await action();
+        }
+        catch (Exception exception) when (exception is GameApiException or HttpRequestException or RpcException or OperationCanceledException or JsonException)
+        {
+            if (lifetime.IsCancellationRequested)
+                return;
+            needsSync |= changesGame;
+            error = exception switch
+            {
+                GameApiException api => api.Message,
+                RpcException { StatusCode: StatusCode.NotFound } => "La partie n’existe plus. Créez une nouvelle partie.",
+                RpcException { StatusCode: StatusCode.InvalidArgument } => "L’identifiant de partie est invalide.",
+                OperationCanceledException => "Le serveur n’a pas répondu à temps. Vérifiez l’état de la partie avant de continuer.",
+                _ => "Connexion au serveur impossible ou réponse invalide. Vérifiez que l’API est démarrée."
+            };
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private static int Remaining(IEnumerable<CellDto> grid) => grid.Count(cell => cell.State == CellState.Ship);
+    private static int Impacts(IEnumerable<CellDto> grid) => grid.Count(cell => cell.State is CellState.Hit or CellState.Sunk);
+    private static string ShotText(string actor, ShotDto? shot) => shot is null ? "Aucun tir à signaler."
+        : $"{actor} · {(char)('A' + shot.Position.Row)}{shot.Position.Column + 1} : {shot.Outcome switch
+        {
+            ShotOutcome.Miss => "à l’eau",
+            ShotOutcome.Hit => "touché",
+            ShotOutcome.Sunk => "coulé",
+            _ => "inconnu"
+        }}.";
+    private static string ShipName(ShipKind kind) => kind switch
+    {
+        ShipKind.AircraftCarrier => "Porte-avions",
+        ShipKind.Cruiser => "Croiseur",
+        ShipKind.Destroyer => "Contre-torpilleur",
+        ShipKind.Submarine => "Sous-marin",
+        _ => "Torpilleur"
+    };
+
+    public void Dispose()
+    {
+        lifetime.Cancel();
+        lifetime.Dispose();
+    }
+}

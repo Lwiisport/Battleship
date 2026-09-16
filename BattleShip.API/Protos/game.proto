@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+option csharp_namespace = "BattleShip.Grpc";
+package battleship.v1;
+
+service GameService {
+  rpc GetGameStatus (GetGameStatusRequest) returns (GameStatusReply);
+}
+
+message GetGameStatusRequest {
+  string game_id = 1;
+}
+
+enum GamePhase {
+  IN_PROGRESS = 0;
+  PLAYER_WON = 1;
+  COMPUTER_WON = 2;
+}
+
+enum CellKind {
+  UNKNOWN = 0;
+  WATER = 1;
+  SHIP = 2;
+  MISS = 3;
+  HIT = 4;
+  SUNK = 5;
+}
+
+enum ImpactKind {
+  IMPACT_KIND_MISS = 0;
+  IMPACT_KIND_HIT = 1;
+  IMPACT_KIND_SUNK = 2;
+}
+
+message CellMessage {
+  int32 row = 1;
+  int32 column = 2;
+  CellKind state = 3;
+}
+
+message ShotMessage {
+  int32 row = 1;
+  int32 column = 2;
+  ImpactKind outcome = 3;
+}
+
+message GameStatusReply {
+  string game_id = 1;
+  string player_name = 2;
+  GamePhase status = 3;
+  int32 turn_number = 4;
+  repeated CellMessage player_grid = 5;
+  repeated CellMessage opponent_grid = 6;
+  ShotMessage last_player_shot = 7;
+  ShotMessage last_computer_shot = 8;
+}

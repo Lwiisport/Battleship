@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.RateLimiting;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
+builder.Services.AddGrpc(options => options.EnableDetailedErrors = false);
 builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -25,7 +26,8 @@ builder.Services.AddSingleton<GameStore>();
 builder.Services.AddCors(options => options.AddPolicy("Blazor", policy => policy
     .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
     .WithMethods("GET", "POST")
-    .AllowAnyHeader()));
+    .AllowAnyHeader()
+    .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding")));
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -42,11 +44,14 @@ builder.Services.AddRateLimiter(options =>
 var app = builder.Build();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseRouting();
+app.UseGrpcWeb();
 app.UseCors("Blazor");
 app.UseRateLimiter();
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 app.MapGameEndpoints();
+app.MapGrpcService<GameGrpcService>().EnableGrpcWeb();
 app.Run();
 
 public partial class Program { }

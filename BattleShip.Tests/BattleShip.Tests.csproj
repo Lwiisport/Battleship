@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="../BattleShip.App/Services/GameHistoryStore.cs" Link="Client/GameHistoryStore.cs" />
   </ItemGroup>
 
   <ItemGroup>

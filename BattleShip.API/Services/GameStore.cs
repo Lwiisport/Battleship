@@ -27,7 +27,7 @@ public sealed class GameStore(IOptions<GameStoreOptions> options, TimeProvider c
                 game = null;
                 return false;
             }
-            game = new Game(playerName);
+            game = new Game(playerName, clock: clock);
             games.Add(game.Id, new Entry(game, now.AddMinutes(options.Value.LifetimeMinutes)));
             return true;
         }

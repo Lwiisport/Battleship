@@ -41,6 +41,19 @@ Saisir un nom, créer une partie et cliquer sur une case adverse. L’ordinateur
 
 Le lien `/?game=<id>` conserve l’identifiant courant : recharger la page reprend la partie tant qu’elle existe. Ce lien donne accès à la partie ; ne pas le partager si elle doit rester privée.
 
+## Historique des parties et des tirs
+
+- **Historique des tirs** affiche chaque tour accepté, les coordonnées et le résultat des tirs du joueur et de l’ordinateur, du plus récent au plus ancien. Le résultat est celui observé au moment du tir ; un impact ancien ne devient pas rétroactivement « Coulé » dans le journal.
+- **Historique des parties** conserve les **50 dernières parties** dans le navigateur, avec la date de création, le nom, le dernier résultat connu et le nombre de tours. La sauvegarde est actualisée après création, tir ou lecture HTTP/gRPC réussie, sans doublon de partie.
+- **Consulter** ouvre le journal archivé sans remplacer la partie en cours et sans appeler l’API.
+- **Reprendre** récupère l’état actuel du serveur avant de permettre de nouveaux tirs. Une partie expirée ou supprimée au redémarrage de l’API ne peut plus être reprise, mais son archive reste consultable.
+
+Les archives utilisent `localStorage`, sous la clé `battleship.history.v1`. Elles survivent au rechargement et à la fermeture du navigateur, sous réserve de ses règles de stockage. Elles sont propres au navigateur et à l’origine utilisée (protocole, hôte et port), non synchronisées entre appareils, et accessibles aux personnes partageant ce profil de navigateur. Changer d’origine, utiliser une fenêtre privée ou effacer les données du site peut masquer ou supprimer cet historique.
+
+La consultation sans connexion à l’API suppose que l’application Blazor soit déjà chargée : ce n’est pas une installation PWA entièrement hors ligne. Les archives contiennent seulement les instantanés masqués reçus par le joueur ; aucune liste globale des parties d’autres utilisateurs n’est exposée. Le résultat d’une partie non terminée reste son **dernier état connu**, pas une vérification en direct du serveur.
+
+Si le stockage est plein, interdit ou illisible, un avertissement s’affiche et le jeu continue avec un historique temporaire en mémoire. Un contenu corrompu n’est pas écrasé automatiquement. Les parties antérieures à cette fonctionnalité ne peuvent pas être reconstituées si elles ont déjà disparu du serveur.
+
 ## Fonctionnalités et règles
 
 - Deux grilles de 10 × 10, coordonnées API indexées de **0 à 9** ; affichage de A1 à J10.
@@ -104,14 +117,14 @@ curl -i "http://localhost:5247/api/games/$GAME_ID/fire" \
   -d '{"row":0,"column":0}'
 ```
 
-`GameStateDto` contient `id`, `playerName`, `status`, `turnNumber`, deux tableaux de 100 cellules et les derniers tirs. Une cellule contient uniquement `row`, `column` et `state`. La réponse n’expose ni objet `Board`, ni liste de positions des navires adverses. Les enums JSON sont des chaînes.
+`GameStateDto` contient `id`, `playerName`, `status`, `turnNumber`, `createdAtUtc`, deux tableaux de 100 cellules, les derniers tirs et `turns`. Chaque `TurnDto` contient `number`, `playerShot` et `computerShot` (nul si le joueur vient de gagner). Les tirs refusés ne sont pas ajoutés à ce journal. Une cellule contient uniquement `row`, `column` et `state`. La réponse n’expose ni objet `Board`, ni liste de positions des navires adverses. Les enums JSON sont des chaînes.
 
 ## Contrat gRPC-Web
 
 - Service : `battleship.v1.GameService`.
 - Méthode unaire : `GetGameStatus`.
 - Requête : `GetGameStatusRequest { game_id }`.
-- Réponse : `GameStatusReply`, avec grilles typées, phase, numéro du tour et derniers tirs.
+- Réponse : `GameStatusReply`, avec grilles typées, phase, numéro du tour, derniers tirs, date UTC de création (`Timestamp`) et historique complet (`TurnMessage`).
 - UUID invalide ou vide : `RpcException` / `InvalidArgument`.
 - Partie inconnue ou expirée : `RpcException` / `NotFound`.
 
@@ -148,7 +161,7 @@ dotnet test BattleShip.Tests/BattleShip.Tests.csproj --configuration Release --n
 dotnet list BattleShip.slnx package --vulnerable --include-transitive
 ```
 
-À la livraison : **65 cas xUnit réussis**, aucun test ignoré, compilation sans avertissement ni erreur et aucune vulnérabilité connue signalée par les sources NuGet consultées. Ce dernier résultat dépend de la date et du catalogue d’avis disponibles, et n’est pas une garantie d’absence de vulnérabilité.
+À la livraison : **81 cas xUnit réussis**, aucun test ignoré, compilation sans avertissement ni erreur et aucune vulnérabilité connue signalée par les sources NuGet consultées. Ce dernier résultat dépend de la date et du catalogue d’avis disponibles, et n’est pas une garantie d’absence de vulnérabilité.
 
 Couverture fonctionnelle :
 
@@ -157,9 +170,14 @@ Couverture fonctionnelle :
 - Victoire, défaite, absence de réponse après le tir gagnant, cibles uniques et concurrence.
 - Validators HTTP/gRPC, champs JSON manquants, erreurs de transport, CORS et OpenAPI.
 - Capacité et expiration avec horloge contrôlée.
-- Équivalence des réponses HTTP et gRPC-Web, modes binaire et texte.
+- Équivalence des réponses HTTP et gRPC-Web, modes binaire et texte, dates et historique complet des tours.
+- Archivage local : restauration, déduplication, protection contre les instantanés plus anciens, borne de 50 parties, archives invalides et reprise après quota dépassé.
 
-Un parcours Chrome automatisé a également été exécuté sur le serveur de développement puis sur les fichiers publiés : création, tir, actualisations par les deux transports, rechargement, affichage à 375 px, réponse de tir perdue, resynchronisation, fin de partie et redémarrage. Ce contrôle navigateur était externe au dépôt et n’est pas inclus dans les 65 tests xUnit.
+Le service client `GameHistoryStore.cs` est lié comme source dans les tests pour vérifier son implémentation réelle sans charger l’application WebAssembly ni dupliquer les types Protobuf. Un faux `IJSRuntime` simule le stockage ; aucune dépendance NuGet supplémentaire n’est nécessaire.
+
+Un parcours Chrome automatisé a également été exécuté sur le serveur de développement puis sur les fichiers publiés : création, tir, actualisations par les deux transports, rechargement, affichage à 375 px, réponse de tir perdue, resynchronisation, fin de partie et redémarrage. Ce contrôle navigateur était externe au dépôt et n’est pas inclus dans les tests xUnit.
+
+Le parcours de l’historique a également été vérifié dans Chrome, en développement et sur publication : plusieurs parties, consultation sans remplacer la partie active, reprise, rechargement, API inaccessible, réponse 404 simulant une partie expirée, récupération d’un tir accepté dont la réponse a été perdue, stockage plein puis rétabli et contenu local corrompu. Aucun échec navigateur non géré n’a été observé.
 
 Pour le reproduire manuellement : effectuer ces actions dans cet ordre, vérifier qu’une case visée est désactivée, que la flotte adverse reste cachée et que les boutons de tir sont tous désactivés en fin de partie. Couper le réseau pendant un tir doit déclencher une erreur et imposer une actualisation avant de continuer.
 
@@ -177,7 +195,7 @@ Sorties :
 
 Héberger le site avec le type MIME WebAssembly approprié et un repli des routes client vers `index.html`. L’API nécessite le runtime ASP.NET Core 10 pour cette publication dépendante du framework. En déploiement public, utiliser HTTPS, des origines CORS explicites et une configuration adaptée au proxy.
 
-Les parties sont **en mémoire, non persistées et propres à une instance**. Redémarrer l’API les supprime ; plusieurs instances nécessiteraient un stockage partagé et une stratégie de concurrence distribuée. Le GUID aléatoire sert de lien d’accès, pas d’authentification utilisateur. Toute personne qui le connaît peut lire ou jouer cette partie. Ajouter authentification et autorisation avant d’exiger une séparation forte entre comptes.
+Les parties jouables côté serveur sont **en mémoire, non persistées et propres à une instance**. Redémarrer l’API les supprime, sans supprimer les archives locales consultables dans le navigateur ; plusieurs instances nécessiteraient un stockage partagé et une stratégie de concurrence distribuée. Le GUID aléatoire sert de lien d’accès, pas d’authentification utilisateur. Toute personne qui le connaît peut lire ou jouer cette partie. Ajouter authentification et autorisation avant d’exiger une séparation forte entre comptes.
 
 ## Historique et livrables
 

@@ -13,6 +13,7 @@ public sealed class GameStoreTests
         Assert.True(store.TryCreate("Alice", out var first));
         Assert.NotNull(first);
         Assert.Same(first, store.Find(first.Id));
+        Assert.Equal(clock.Now, first.GetState().CreatedAtUtc);
         Assert.False(store.TryCreate("Bob", out _));
         clock.Now = clock.Now.AddMinutes(1);
         Assert.True(store.TryCreate("Bob", out var second));

@@ -17,6 +17,7 @@ if (!Uri.TryCreate(address.TrimEnd('/') + "/", UriKind.Absolute, out var apiUri)
 
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = apiUri, Timeout = TimeSpan.FromSeconds(15) });
 builder.Services.AddScoped<GameHttpClient>();
+builder.Services.AddScoped<GameHistoryStore>();
 builder.Services.AddScoped(_ => GrpcChannel.ForAddress(apiUri, new GrpcChannelOptions
 {
     HttpHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, new HttpClientHandler()),

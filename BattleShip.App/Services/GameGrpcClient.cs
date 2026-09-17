@@ -16,7 +16,10 @@ public sealed class GameGrpcClient(GameService.GameServiceClient client)
             GamePhase.ComputerWon => GameStatus.ComputerWon,
             _ => throw new InvalidOperationException("État de partie inconnu.")
         }, reply.TurnNumber, reply.PlayerGrid.Select(MapCell).ToArray(), reply.OpponentGrid.Select(MapCell).ToArray(),
-            MapShot(reply.LastPlayerShot), MapShot(reply.LastComputerShot));
+            MapShot(reply.LastPlayerShot), MapShot(reply.LastComputerShot), reply.CreatedAtUtc.ToDateTimeOffset(),
+            reply.Turns.Select(turn => new TurnDto(turn.Number,
+                MapShot(turn.PlayerShot) ?? throw new InvalidOperationException("Tir joueur manquant."),
+                MapShot(turn.ComputerShot))).ToArray());
     }
 
     private static CellDto MapCell(CellMessage cell) => new(cell.Row, cell.Column, cell.State switch

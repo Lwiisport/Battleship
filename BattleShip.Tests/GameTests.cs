@@ -22,6 +22,39 @@ public sealed class GameTests
     }
 
     [Fact]
+    public void New_game_has_a_creation_date_and_empty_history()
+    {
+        var before = DateTimeOffset.UtcNow;
+        var state = new Game("Alice", new Random(42)).GetState();
+        Assert.InRange(state.CreatedAtUtc, before, DateTimeOffset.UtcNow);
+        Assert.Empty(state.Turns);
+    }
+
+    [Fact]
+    public void History_keeps_every_accepted_turn_in_order()
+    {
+        var game = new Game("Alice", new Random(42));
+        var first = game.Fire(new Position(0, 0));
+        var second = game.Fire(new Position(0, 1));
+        Assert.Single(first.Turns);
+        Assert.Equal(2, second.Turns.Length);
+        Assert.Equal(first.CreatedAtUtc, second.CreatedAtUtc);
+        Assert.Equal(new TurnDto(1, first.LastPlayerShot!, first.LastComputerShot), second.Turns[0]);
+        Assert.Equal(new TurnDto(2, second.LastPlayerShot!, second.LastComputerShot), second.Turns[1]);
+        Assert.Equal(second.Turns, game.GetState().Turns);
+    }
+
+    [Fact]
+    public void Returned_history_cannot_mutate_the_game()
+    {
+        var game = new Game("Alice", new Random(42));
+        var snapshot = game.Fire(new Position(0, 0));
+        var before = JsonSerializer.Serialize(game.GetState());
+        snapshot.Turns[0] = new TurnDto(99, new ShotDto(new Position(9, 9), ShotOutcome.Sunk), null);
+        Assert.Equal(before, JsonSerializer.Serialize(game.GetState()));
+    }
+
+    [Fact]
     public void Returned_arrays_cannot_mutate_the_game()
     {
         var game = new Game("Alice", new Random(42));
@@ -66,6 +99,9 @@ public sealed class GameTests
             {
                 state = game.Fire(new Position(index / 10, index % 10));
                 Assert.Equal(index + 1, state.TurnNumber);
+                Assert.Equal(state.TurnNumber, state.Turns.Length);
+                Assert.Equal(state.LastPlayerShot, state.Turns[^1].PlayerShot);
+                Assert.Equal(state.LastComputerShot, state.Turns[^1].ComputerShot);
                 Assert.DoesNotContain(state.OpponentGrid, cell => cell.State is CellState.Ship or CellState.Water);
                 Assert.Equal(99 - index, state.OpponentGrid.Count(cell => cell.State == CellState.Unknown));
                 if (state.LastComputerShot is { } shot)
@@ -95,6 +131,9 @@ public sealed class GameTests
         Assert.Equal(GameStatus.PlayerWon, state.Status);
         Assert.Equal(17, state.TurnNumber);
         Assert.Null(state.LastComputerShot);
+        Assert.Equal(17, state.Turns.Length);
+        Assert.Null(state.Turns[^1].ComputerShot);
+        Assert.All(state.Turns[..^1], turn => Assert.NotNull(turn.ComputerShot));
         Assert.Equal(17, state.OpponentGrid.Count(cell => cell.State == CellState.Sunk));
         Assert.Equal(16, state.PlayerGrid.Count(cell => cell.State is CellState.Miss or CellState.Hit or CellState.Sunk));
     }
@@ -136,6 +175,7 @@ public sealed class GameTests
         })));
         Assert.Single(results, applied => applied);
         Assert.Equal(1, game.GetState().TurnNumber);
+        Assert.Single(game.GetState().Turns);
     }
 
     [Theory]

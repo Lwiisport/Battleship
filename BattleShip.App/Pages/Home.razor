@@ -5,6 +5,7 @@
 @inject GameHttpClient Http
 @inject GameGrpcClient GrpcClient
 @inject NavigationManager Navigation
+@inject GameHistoryStore History
 
 <PageTitle>Bataille navale — Poste de commandement</PageTitle>
 
@@ -38,6 +39,10 @@
 @if (error is not null)
 {
     <div class="notice error" role="alert">@error</div>
+}
+@if (History.Warning is { } warning)
+{
+    <div class="notice warning" role="status">@warning</div>
 }
 @if (needsSync)
 {
@@ -87,7 +92,10 @@ else
         <span><i class="swatch cell-sunk">×</i> Coulé</span>
         <span class="sync-label" role="status">Dernière synchronisation : @transport</span>
     </div>
+    <TurnHistory Turns="game.Turns" />
 }
+
+<GameHistoryPanel Entries="History.Entries" ActiveGameId="game?.Id" Disabled="busy" OnResume="ResumeGame" />
 
 <section class="fleet-section" aria-label="Composition de la flotte">
     <p class="eyebrow">VOTRE ESCADRE · 5 NAVIRES · 17 CASES</p>
@@ -120,6 +128,8 @@ else
         _ => "Votre tour : choisissez une case adverse."
     };
 
+    protected override Task OnInitializedAsync() => History.LoadAsync();
+
     protected override async Task OnParametersSetAsync()
     {
         if (GameId == loadedGameId)
@@ -145,6 +155,17 @@ else
     private Task StartGame() => Run(async () =>
     {
         game = await Http.CreateAsync(playerName.Trim(), lifetime.Token);
+        playerName = game.PlayerName;
+        needsSync = false;
+        transport = "HTTP";
+        loadedGameId = game.Id.ToString();
+        Navigation.NavigateTo($"/?game={loadedGameId}", replace: true);
+    });
+
+    private Task ResumeGame(Guid id) => Run(async () =>
+    {
+        var resumed = await Http.GetAsync(id, lifetime.Token);
+        game = resumed;
         playerName = game.PlayerName;
         needsSync = false;
         transport = "HTTP";
@@ -186,6 +207,8 @@ else
         try
         {
             await action();
+            if (game is not null)
+                await History.RememberAsync(game);
         }
         catch (Exception exception) when (exception is GameApiException or HttpRequestException or RpcException or OperationCanceledException or JsonException)
         {

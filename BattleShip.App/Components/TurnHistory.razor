@@ -1,0 +1,39 @@
+<details class="panel turn-history" open>
+    <summary>@Title <span class="history-count">@Turns.Count tour(s)</span></summary>
+    @if (Turns.Count == 0)
+    {
+        <p class="history-note">Aucun tir n’a encore été effectué.</p>
+    }
+    else
+    {
+        <div class="history-scroll" tabindex="0" role="region" aria-label="@Title">
+            <table class="history-table" aria-label="@Title">
+                <thead><tr><th scope="col">Tour</th><th scope="col">Votre tir</th><th scope="col">Ordinateur</th></tr></thead>
+                <tbody>
+                    @foreach (var turn in Turns.Reverse())
+                    {
+                        <tr @key="turn.Number">
+                            <th scope="row">@turn.Number</th>
+                            <td>@ShotText(turn.PlayerShot)</td>
+                            <td>@ShotText(turn.ComputerShot)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</details>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<TurnDto> Turns { get; set; } = [];
+    [Parameter] public string Title { get; set; } = "Historique des tirs";
+
+    private static string ShotText(ShotDto? shot) => shot is null ? "Aucun tir — fin de partie"
+        : $"{(char)('A' + shot.Position.Row)}{shot.Position.Column + 1} · {shot.Outcome switch
+        {
+            ShotOutcome.Miss => "À l’eau",
+            ShotOutcome.Hit => "Touché",
+            ShotOutcome.Sunk => "Coulé",
+            _ => "Inconnu"
+        }}";
+}

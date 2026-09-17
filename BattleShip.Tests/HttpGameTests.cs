@@ -29,6 +29,27 @@ public sealed class HttpGameTests(ApiFactory factory) : IClassFixture<ApiFactory
         Assert.DoesNotContain(state.OpponentGrid, cell => cell.State is CellState.Ship or CellState.Water);
     }
 
+    [Fact]
+    public async Task Get_restores_all_turns_with_the_original_creation_date()
+    {
+        using var client = factory.CreateClient();
+        using var created = await client.PostAsJsonAsync("/api/games", new CreateGameRequest("Alice"));
+        var initial = await ReadState(created);
+        Assert.Empty(initial.Turns);
+        var route = $"/api/games/{initial.Id}";
+        using var first = await client.PostAsJsonAsync(route + "/fire", new FireRequest(0, 0));
+        var firstState = await ReadState(first);
+        using var second = await client.PostAsJsonAsync(route + "/fire", new FireRequest(0, 1));
+        var secondState = await ReadState(second);
+        using var fetched = await client.GetAsync(route);
+        var restored = await ReadState(fetched);
+        Assert.Equal(initial.CreatedAtUtc, restored.CreatedAtUtc);
+        Assert.Equal(2, restored.Turns.Length);
+        Assert.Equal(firstState.Turns[0], restored.Turns[0]);
+        Assert.Equal(secondState.Turns, restored.Turns);
+        Assert.DoesNotContain(restored.OpponentGrid, cell => cell.State is CellState.Ship or CellState.Water);
+    }
+
     [Theory]
     [InlineData("{}")]
     [InlineData("null")]

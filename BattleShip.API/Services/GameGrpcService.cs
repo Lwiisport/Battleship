@@ -1,6 +1,7 @@
 using BattleShip.Grpc;
 using BattleShip.Models;
 using FluentValidation;
+using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 
 namespace BattleShip.API.Services;
@@ -22,6 +23,7 @@ public sealed class GameGrpcService(GameStore store, IValidator<GetGameStatusReq
             GameId = state.Id.ToString(),
             PlayerName = state.PlayerName,
             TurnNumber = state.TurnNumber,
+            CreatedAtUtc = Timestamp.FromDateTimeOffset(state.CreatedAtUtc),
             Status = state.Status switch
             {
                 GameStatus.InProgress => GamePhase.InProgress,
@@ -36,6 +38,13 @@ public sealed class GameGrpcService(GameStore store, IValidator<GetGameStatusReq
             reply.LastPlayerShot = MapShot(playerShot);
         if (state.LastComputerShot is { } computerShot)
             reply.LastComputerShot = MapShot(computerShot);
+        foreach (var turn in state.Turns)
+        {
+            var message = new TurnMessage { Number = turn.Number, PlayerShot = MapShot(turn.PlayerShot) };
+            if (turn.ComputerShot is { } shot)
+                message.ComputerShot = MapShot(shot);
+            reply.Turns.Add(message);
+        }
         return reply;
     }
 

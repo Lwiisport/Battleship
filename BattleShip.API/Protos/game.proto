@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "google/protobuf/timestamp.proto";
+
 option csharp_namespace = "BattleShip.Grpc";
 package battleship.v1;
 
@@ -44,6 +46,12 @@ message ShotMessage {
   ImpactKind outcome = 3;
 }
 
+message TurnMessage {
+  int32 number = 1;
+  ShotMessage player_shot = 2;
+  ShotMessage computer_shot = 3;
+}
+
 message GameStatusReply {
   string game_id = 1;
   string player_name = 2;
@@ -53,4 +61,6 @@ message GameStatusReply {
   repeated CellMessage opponent_grid = 6;
   ShotMessage last_player_shot = 7;
   ShotMessage last_computer_shot = 8;
+  google.protobuf.Timestamp created_at_utc = 9;
+  repeated TurnMessage turns = 10;
 }

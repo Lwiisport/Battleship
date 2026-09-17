@@ -27,14 +27,24 @@ public sealed class GrpcGameTests(ApiFactory factory) : IClassFixture<ApiFactory
         Assert.All(first.OpponentGrid, cell => Assert.Equal(CellKind.Unknown, cell.State));
         Assert.Null(first.LastPlayerShot);
         Assert.Null(first.LastComputerShot);
+        Assert.Empty(first.Turns);
+        Assert.Equal(initial.CreatedAtUtc, first.CreatedAtUtc.ToDateTimeOffset());
 
-        using var fired = await http.PostAsJsonAsync($"/api/games/{initial.Id}/fire", new FireRequest(0, 0));
+        using var firstFire = await http.PostAsJsonAsync($"/api/games/{initial.Id}/fire", new FireRequest(0, 0));
+        firstFire.EnsureSuccessStatusCode();
+        using var fired = await http.PostAsJsonAsync($"/api/games/{initial.Id}/fire", new FireRequest(0, 1));
         var state = await fired.Content.ReadFromJsonAsync<GameStateDto>(ApiFactory.JsonOptions);
         Assert.NotNull(state);
         var reply = await client.GetGameStatusAsync(new GetGameStatusRequest { GameId = initial.Id.ToString() });
         Assert.Equal(state.Id.ToString(), reply.GameId);
         Assert.Equal(state.PlayerName, reply.PlayerName);
         Assert.Equal(state.TurnNumber, reply.TurnNumber);
+        Assert.Equal(state.CreatedAtUtc, reply.CreatedAtUtc.ToDateTimeOffset());
+        Assert.Equal(2, reply.Turns.Count);
+        Assert.Equal(state.Turns, reply.Turns.Select(turn => new TurnDto(turn.Number,
+            new ShotDto(new Position(turn.PlayerShot.Row, turn.PlayerShot.Column), (ShotOutcome)turn.PlayerShot.Outcome),
+            turn.ComputerShot is null ? null : new ShotDto(new Position(turn.ComputerShot.Row, turn.ComputerShot.Column),
+                (ShotOutcome)turn.ComputerShot.Outcome))));
         Assert.Equal((int)state.Status, (int)reply.Status);
         Assert.Equal(100, reply.PlayerGrid.Count);
         Assert.Equal(100, reply.OpponentGrid.Count);

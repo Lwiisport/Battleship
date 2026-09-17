@@ -92,6 +92,24 @@ button.cell-unknown:hover:not(:disabled) { background: #c1ddd1; border-color: va
 .loading-progress circle:last-child { stroke: var(--teal); stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * .8), 500%; }
 .loading-progress-text { position: absolute; inset: calc(25vh + 3.25rem) 0 auto; text-align: center; font-weight: 650; }
 .loading-progress-text::after { content: var(--blazor-load-percentage-text, "Chargement"); }
+.game-history, .turn-history { margin-top: 1.25rem; padding: 1.25rem; }
+.turn-history > summary { cursor: pointer; font-weight: 700; font-size: 1rem; }
+.turn-history > summary .history-count { margin-left: .6rem; }
+.history-heading, .archive-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.history-heading .eyebrow { margin-bottom: .4rem; }
+.history-count { color: var(--muted); font-size: .75rem; font-weight: 500; white-space: nowrap; }
+.history-note { color: var(--muted); font-size: .8rem; line-height: 1.7; margin: .8rem 0; }
+.history-scroll { max-height: 24rem; overflow: auto; margin-top: .8rem; }
+.history-scroll:focus-visible { outline: 3px solid #d07c1c; outline-offset: 3px; }
+.history-table { width: 100%; border-collapse: collapse; font-size: .8rem; text-align: left; }
+.history-table th, .history-table td { padding: .7rem .65rem; border-bottom: 1px solid var(--line); }
+.history-table thead th { color: var(--muted); font-size: .7rem; background: #f3f6f5; position: sticky; top: 0; }
+.history-table tbody th { font-weight: 600; }
+.games-table { min-width: 680px; }
+.history-actions { white-space: nowrap; }
+.history-actions button + button { margin-left: .4rem; }
+.archive-heading { margin-top: 1.4rem; flex-wrap: wrap; }
+.archive-heading h3 { margin: 0; font-size: 1rem; }
 @media (max-width: 850px) {
     .boards { grid-template-columns: 1fr; }
     .board-panel { max-width: 580px; width: 100%; margin: auto; }

@@ -16,6 +16,7 @@ public sealed record CreateGameRequest(string PlayerName);
 public sealed record FireRequest(int Row, int Column);
 public sealed record CellDto(int Row, int Column, CellState State);
 public sealed record ShotDto(Position Position, ShotOutcome Outcome);
+public sealed record TurnDto(int Number, ShotDto PlayerShot, ShotDto? ComputerShot);
 public sealed record GameStateDto(
     Guid Id,
     string PlayerName,
@@ -24,7 +25,9 @@ public sealed record GameStateDto(
     CellDto[] PlayerGrid,
     CellDto[] OpponentGrid,
     ShotDto? LastPlayerShot,
-    ShotDto? LastComputerShot);
+    ShotDto? LastComputerShot,
+    DateTimeOffset CreatedAtUtc,
+    TurnDto[] Turns);
 
 public sealed class GameRuleException(GameError error, string message) : Exception(message)
 {

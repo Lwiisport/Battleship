@@ -4,6 +4,8 @@ Ces trois revues évaluent le code et des alternatives de conception. Elles ne c
 
 Les messages de commit cités sont les sujets prévus dans [PROMPTS.md](PROMPTS.md). À la rédaction, les commits n’ont pas encore été exécutés ; les hashes ci-dessous désignent des **arbres Git**, jamais des commits inventés. Après création de l’historique, `git log --fixed-strings --grep='<sujet>'` retrouve le commit correspondant.
 
+Les commits initiaux sont désormais présents dans l’historique Git. Les chemins ci-dessous restent ceux du code effectivement examiné dans les instantanés cités ; la réorganisation des fichiers n’altère pas ces preuves. Pour les emplacements actuels (`Engine`, `Features`, `Unit`, `Integration`), consulter l’arborescence du README.
+
 ## Revue 1 — Accepté : construire l’état adverse masqué sur le serveur
 
 ### Code examiné

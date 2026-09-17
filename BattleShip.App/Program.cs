@@ -1,5 +1,6 @@
 using BattleShip.App;
-using BattleShip.App.Services;
+using BattleShip.App.Features.Games.Clients;
+using BattleShip.App.Features.History.Services;
 using BattleShip.Grpc;
 using Grpc.Net.Client;
 using Grpc.Net.Client.Web;

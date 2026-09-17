@@ -4,7 +4,7 @@
 
 Ce document récapitule les demandes fonctionnelles et leur mise en œuvre. Il ne prétend pas reproduire des échanges inexistants ni un historique déjà committé.
 
-Au moment de sa rédaction, `main` n’a aucun commit. Chaque étape a été enregistrée dans un arbre Git à l’aide d’un index séparé. Les références `refs/snapshots/battleship/step-N` préservent ces arbres localement, sans modifier l’index de travail de l’utilisateur. **Un SHA d’arbre n’est pas un SHA de commit.**
+Lors de la rédaction initiale, `main` n’avait aucun commit. Les sept commits initiaux ont depuis été créés et publiés, jusqu’à `3e2c3d7`. Les commandes de création conservées plus bas décrivent cette phase initiale et ne doivent pas être rejouées sur la branche actuelle. Les anciens chemins sont ceux des instantanés ; consulter le README pour l’organisation actuelle par fonctionnalité. Chaque étape avait été enregistrée dans un arbre Git à l’aide d’un index séparé. Les références `refs/snapshots/battleship/step-N` préservent ces arbres localement, sans modifier l’index de travail de l’utilisateur. **Un SHA d’arbre n’est pas un SHA de commit.**
 
 | Étape | Message de commit prévu | Arbre vérifiable |
 | --- | --- | --- |

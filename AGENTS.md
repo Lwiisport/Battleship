@@ -34,10 +34,22 @@
 - Le client utilise `BattleShip.App/wwwroot/appsettings.json` pour `ApiBaseUrl` ; cette configuration est publique.
 - Le namespace Protobuf `BattleShip.Grpc` nécessite `global::Grpc.Core` dans les imports Razor concernés.
 - En Development, configurer `RouteHandlerOptions.ThrowOnBadRequest = false` évite que le gestionnaire général d’exceptions transforme les erreurs de liaison JSON en 500.
-- Les arbres locaux `refs/snapshots/battleship/step-N` préservent les étapes sans commits ; les commandes de matérialisation figurent dans `PROMPTS.md`.
+- Les arbres locaux `refs/snapshots/battleship/step-N` sont des instantanés historiques antérieurs aux commits initiaux. Ne pas rejouer les anciennes commandes de matérialisation sur une branche déjà committée.
 - Le stock de parties est borné, non persistant et mono-instance ; l’identifiant de partie sert de lien d’accès, pas d’authentification.
 - `GameStateDto.CreatedAtUtc` et `Turns` sont partagés par HTTP et gRPC-Web ; un tir refusé ne doit jamais modifier le journal des tours.
 - `GameHistoryStore` conserve les 50 dernières parties dans `localStorage` (`battleship.history.v1`), sans exposer une liste globale côté API. Les archives ne permettent pas de reprendre une partie disparue du serveur.
 - Le service client d’archive est lié comme source dans `BattleShip.Tests` pour tester le stockage via un faux `IJSRuntime`, sans référence au projet WebAssembly.
 - L’archive utilise un contexte System.Text.Json généré pour rester compatible avec la publication Blazor optimisée en taille. Un échec de stockage doit produire un avertissement, pas invalider un tour accepté.
 - Les archives sont propres à l’origine et au profil de navigateur. Leur consultation reste possible sans API une fois l’application chargée, mais le site n’est pas une PWA hors ligne.
+
+## Organisation des sources
+
+- Les namespaces suivent les dossiers ; placer les nouveaux fichiers avec leur fonctionnalité, pas à la racine du projet.
+- Models : `Engine`, `Contracts`, `Enums`, `Exceptions`.
+- API : `Features/Games/Http`, `Features/Games/Grpc`, `Features/Games/Storage`, avec les validators proches du transport concerné.
+- App : `Features/Games` (pages, composants, clients), `Features/History` (composants, services), `Shared` (layout et pages communes).
+- Tests : `Unit/Engine`, `Unit/Storage`, `Unit/Validation`, `Unit/History`, `Integration/Http`, `Integration/Grpc`, `Infrastructure`.
+- Les tests de validators sont unitaires ; réserver `Integration` aux appels traversant le serveur HTTP ou gRPC-Web.
+- Filtrer les catégories avec `--filter 'FullyQualifiedName~BattleShip.Tests.Unit.'` ou `--filter 'FullyQualifiedName~BattleShip.Tests.Integration.'`.
+- Contrat Protobuf partagé : `BattleShip.API/Features/Games/Grpc/Protos/game.proto`.
+- Source client liée aux tests : `BattleShip.App/Features/History/Services/GameHistoryStore.cs`, affichée sous `Infrastructure/Client`.

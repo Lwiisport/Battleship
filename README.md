@@ -85,9 +85,62 @@ BattleShip.App ── HTTP / gRPC-Web ──> BattleShip.API
 | `BattleShip.App` | Interface, client HTTP, canal gRPC-Web et conversion des messages Protobuf en DTO. |
 | `BattleShip.Tests` | xUnit, tests déterministes, `WebApplicationFactory` et appels gRPC-Web réels sur TestServer. |
 
-Le fichier unique `BattleShip.API/Protos/game.proto` est compilé côté serveur et lié comme source côté Blazor. L’application ne référence pas l’assembly serveur. Les messages générés restent hors du domaine ; les fichiers générés dans `obj/` ne sont pas versionnés.
+Le fichier unique `BattleShip.API/Features/Games/Grpc/Protos/game.proto` est compilé côté serveur et lié comme source côté Blazor. L’application ne référence pas l’assembly serveur. Les messages générés restent hors du domaine ; les fichiers générés dans `obj/` ne sont pas versionnés.
 
 Décision détaillée : [ADR-001](docs/adr/ADR-001-ARCHITECTURE-GRPC-HTTP.md).
+
+### Organisation des dossiers
+
+```text
+BattleShip.Models/
+├── Engine/                    Board, Game, Ship, Position, ShipSpecification
+├── Contracts/                 Requêtes et DTO de réponse
+├── Enums/                     États, types de navire et résultats
+└── Exceptions/                Erreurs métier
+
+BattleShip.API/
+└── Features/Games/
+    ├── Http/                  Endpoints Minimal API
+    │   └── Validation/        Validators des requêtes HTTP
+    ├── Grpc/                  Service gRPC-Web
+    │   ├── Protos/            Contrat game.proto
+    │   └── Validation/        Validator de la requête gRPC
+    └── Storage/               Stockage mémoire et options d’expiration
+
+BattleShip.App/
+├── Features/
+│   ├── Games/
+│   │   ├── Pages/             Page de jeu Home
+│   │   ├── Components/        Grille interactive
+│   │   └── Clients/           Clients HTTP et gRPC-Web
+│   └── History/
+│       ├── Components/        Liste des parties et journal des tirs
+│       └── Services/          Archivage local et sérialisation
+├── Shared/
+│   ├── Layout/                Mise en page commune
+│   └── Pages/                 Page introuvable
+└── wwwroot/                   Ressources statiques et styles communs
+
+BattleShip.Tests/
+├── Infrastructure/            Fabrique de serveur et source client liée
+├── Unit/
+│   ├── Engine/                Placement, masquage, tours et concurrence
+│   ├── Storage/               Capacité et expiration du stockage API
+│   ├── Validation/            Validators HTTP et gRPC sans serveur
+│   └── History/               Archivage local via un faux IJSRuntime
+└── Integration/
+    ├── Http/                  Endpoints, erreurs, CORS et OpenAPI
+    └── Grpc/                  Transport gRPC-Web et équivalence des états
+```
+
+Les namespaces suivent ces dossiers. Les points d’entrée (`Program.cs`, `App.razor`), les fichiers projet et les configurations standards restent à leur emplacement habituel. Les routes HTTP, le package Protobuf `battleship.v1` et le format des archives locales ne changent pas avec cette organisation.
+
+Pour exécuter seulement une catégorie de tests après compilation :
+
+```bash
+dotnet test BattleShip.Tests/BattleShip.Tests.csproj --configuration Release --no-build --filter 'FullyQualifiedName~BattleShip.Tests.Unit.'
+dotnet test BattleShip.Tests/BattleShip.Tests.csproj --configuration Release --no-build --filter 'FullyQualifiedName~BattleShip.Tests.Integration.'
+```
 
 ## Contrats HTTP
 
@@ -173,7 +226,7 @@ Couverture fonctionnelle :
 - Équivalence des réponses HTTP et gRPC-Web, modes binaire et texte, dates et historique complet des tours.
 - Archivage local : restauration, déduplication, protection contre les instantanés plus anciens, borne de 50 parties, archives invalides et reprise après quota dépassé.
 
-Le service client `GameHistoryStore.cs` est lié comme source dans les tests pour vérifier son implémentation réelle sans charger l’application WebAssembly ni dupliquer les types Protobuf. Un faux `IJSRuntime` simule le stockage ; aucune dépendance NuGet supplémentaire n’est nécessaire.
+Le service client `Features/History/Services/GameHistoryStore.cs` est lié comme source sous `Infrastructure/Client` dans les tests pour vérifier son implémentation réelle sans charger l’application WebAssembly ni dupliquer les types Protobuf. Un faux `IJSRuntime` simule le stockage ; aucune dépendance NuGet supplémentaire n’est nécessaire.
 
 Un parcours Chrome automatisé a également été exécuté sur le serveur de développement puis sur les fichiers publiés : création, tir, actualisations par les deux transports, rechargement, affichage à 375 px, réponse de tir perdue, resynchronisation, fin de partie et redémarrage. Ce contrôle navigateur était externe au dépôt et n’est pas inclus dans les tests xUnit.
 
@@ -203,4 +256,4 @@ Les parties jouables côté serveur sont **en mémoire, non persistées et propr
 - [REVUE-IA.md](REVUE-IA.md) : trois revues argumentées, décisions et preuves.
 - [ADR-001](docs/adr/ADR-001-ARCHITECTURE-GRPC-HTTP.md) : choix de l’architecture mixte.
 
-À la rédaction, aucun commit n’avait encore été créé. Les étapes sont conservées sous `refs/snapshots/battleship/step-1` à `step-7`. Ce sont des objets **tree**, pas des commits. Les commandes de `PROMPTS.md` permettent de construire l’historique sans écraser les fichiers de travail ; les références documentaires utilisent les messages prévus et les identifiants réels des arbres, sans inventer de SHA de commit.
+L’historique initial est désormais présent dans Git ; `git log --oneline` permet de consulter les commits réels. Les références locales `refs/snapshots/battleship/step-1` à `step-7` sont les anciens instantanés de préparation, de type **tree**, et ne sont pas nécessaires pour utiliser le dépôt cloné. Les commandes de matérialisation conservées dans `PROMPTS.md` sont historiques : ne pas les rejouer sur cette branche. Les anciens chemins cités dans les revues correspondent au code des instantanés examinés ; l’arborescence ci-dessus décrit les fichiers actuels.

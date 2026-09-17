@@ -1,8 +1,9 @@
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
-using BattleShip.API.Endpoints;
-using BattleShip.API.Services;
-using BattleShip.API.Validation;
+using BattleShip.API.Features.Games.Grpc;
+using BattleShip.API.Features.Games.Http;
+using BattleShip.API.Features.Games.Http.Validation;
+using BattleShip.API.Features.Games.Storage;
 using FluentValidation;
 using Microsoft.AspNetCore.RateLimiting;
 

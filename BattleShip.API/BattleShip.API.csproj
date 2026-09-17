@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Protobuf Include="Protos/game.proto" GrpcServices="Both" />
+    <Protobuf Include="Features/Games/Grpc/Protos/game.proto" GrpcServices="Both" />
   </ItemGroup>
 
 </Project>

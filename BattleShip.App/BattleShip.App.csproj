@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Protobuf Include="../BattleShip.API/Protos/game.proto" Link="Protos/game.proto" GrpcServices="Client" />
+    <Protobuf Include="../BattleShip.API/Features/Games/Grpc/Protos/game.proto" Link="Features/Games/Protos/game.proto" GrpcServices="Client" />
   </ItemGroup>
 
 </Project>

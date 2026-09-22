@@ -1,6 +1,6 @@
 # Revues de code argumentées
 
-Ces trois revues évaluent le code et des alternatives de conception. Elles ne constituent ni une approbation humaine, ni une certification de sécurité. Les décisions sont reliées aux tests et aux instantanés réellement enregistrés.
+Ces quatre revues évaluent le code et des alternatives de conception. Elles ne constituent ni une approbation humaine, ni une certification de sécurité. Les décisions sont reliées aux tests et aux instantanés réellement enregistrés.
 
 Les messages de commit cités sont les sujets prévus dans [PROMPTS.md](PROMPTS.md). À la rédaction, les commits n’ont pas encore été exécutés ; les hashes ci-dessous désignent des **arbres Git**, jamais des commits inventés. Après création de l’historique, `git log --fixed-strings --grep='<sujet>'` retrouve le commit correspondant.
 
@@ -117,6 +117,37 @@ Références :
 
 Le contrôle navigateur n’est pas inclus dans les 65 cas xUnit du dépôt. Pour une évolution vers des commandes métier réessayables à grande échelle, une clé d’idempotence explicite, persistée avec le résultat du tour, serait préférable à un simple mécanisme de nouvelle tentative.
 
+## Revue 4 — Adapté : résoudre la mine dans l’ordre adverse puis renvoi, avec match nul possible
+
+### Code examiné
+
+- `BattleShip.Models/Engine/Game.cs` : `UsePower`, détonation et `GameStatus.Draw`.
+- `BattleShip.Models/Engine/PowerRules.cs` : coûts et zones cibles.
+- `BattleShip.Models/Engine/Board.cs` : mines posées et tirs de zone.
+
+### Problème à trancher
+
+Une mine renvoie un tir sur la même coordonnée adverse. Deux ordres étaient possibles : intercepter le tir ennemi avant application (la mine « protège » la case), ou appliquer le tir puis renvoyer. La première option aurait fait de la mine un bouclier et aurait compliqué le cas où la case minée contient un navire.
+
+### Décision
+
+**Adapté**, selon la règle confirmée avec le demandeur : le tir adverse est appliqué normalement, puis le renvoi est résolu. La mine est une riposte, pas une protection. Si le renvoi détruit la dernière case des deux flottes, le statut `Draw` évite de déclarer un vainqueur arbitraire ; l’interface et les deux transports exposent ce quatrième résultat.
+
+Le renvoi n’est pas un tir normal : il ne rapporte aucun point et ne peut pas lui-même déclencher de mine (l’ordinateur n’en pose pas). Les cases déjà visées par une zone sont ignorées, et une zone entièrement rejouée est refusée avant tout paiement — ainsi un pouvoir refusé ne consomme ni points ni tour, conformément à l’invariant historique des tirs refusés.
+
+### Preuves
+
+- `PowerTests` : coûts, plafond de 10 points, refus sans mutation, zones, détonation et match nul.
+- `HttpPowerTests` : le même contrat via `POST /api/games/{id}/powers`, y compris les codes 409 métier.
+- `GameHistoryStoreTests.Powers_and_points_survive_archiving` et rejet des archives aux points impossibles.
+- Contrôle Chrome externe : 26 vérifications, dont la prévisualisation au survol et au focus clavier sans fuite des navires cachés.
+
+Référence : `feat(game): add skill powers and target previews`, commit créé après ces revues.
+
+### Réserve
+
+La prévisualisation calcule les zones côté client via `PowerRules`, dupliquant la géométrie du moteur dans l’interface. Un décalage futur entre les deux copies serait possible ; les tests d’intégration couvrent le serveur, pas le rendu, d’où le contrôle navigateur dédié.
+
 ## Bilan
 
-Le code accepté protège la frontière des données ; le code adapté corrige un défaut reproduit dans les tests ; l’alternative rejetée évite de confondre une réponse perdue avec une commande non exécutée. Les limites restantes sont assumées et documentées : stockage mémoire mono-instance, absence de comptes utilisateurs, adversaire aléatoire sans stratégie de poursuite et contrôle navigateur externe.
+Le code accepté protège la frontière des données ; le code adapté corrige un défaut reproduit dans les tests ; l’alternative rejetée évite de confondre une réponse perdue avec une commande non exécutée. Les limites restantes sont assumées et documentées : stockage mémoire mono-instance, absence de comptes utilisateurs, adversaire aléatoire sans stratégie de poursuite, duplication de la géométrie des pouvoirs côté client et contrôle navigateur externe.

@@ -17,6 +17,7 @@ enum GamePhase {
   IN_PROGRESS = 0;
   PLAYER_WON = 1;
   COMPUTER_WON = 2;
+  DRAW = 3;
 }
 
 enum CellKind {
@@ -34,10 +35,29 @@ enum ImpactKind {
   IMPACT_KIND_SUNK = 2;
 }
 
+enum ActionKind {
+  ACTION_KIND_NORMAL_SHOT = 0;
+  ACTION_KIND_MINE = 1;
+  ACTION_KIND_SQUARE_STRIKE = 2;
+  ACTION_KIND_ROW_STRIKE = 3;
+  ACTION_KIND_COLUMN_STRIKE = 4;
+}
+
+message PositionMessage {
+  int32 row = 1;
+  int32 column = 2;
+}
+
+message MineDetonationMessage {
+  PositionMessage position = 1;
+  ShotMessage reflected_shot = 2;
+}
+
 message CellMessage {
   int32 row = 1;
   int32 column = 2;
   CellKind state = 3;
+  bool has_mine = 4;
 }
 
 message ShotMessage {
@@ -50,6 +70,11 @@ message TurnMessage {
   int32 number = 1;
   ShotMessage player_shot = 2;
   ShotMessage computer_shot = 3;
+  ActionKind action = 4;
+  PositionMessage target = 5;
+  repeated ShotMessage player_shots = 6;
+  MineDetonationMessage mine_detonation = 7;
+  int32 skill_points_after = 8;
 }
 
 message GameStatusReply {
@@ -63,4 +88,5 @@ message GameStatusReply {
   ShotMessage last_computer_shot = 8;
   google.protobuf.Timestamp created_at_utc = 9;
   repeated TurnMessage turns = 10;
+  int32 skill_points = 11;
 }

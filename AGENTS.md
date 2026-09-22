@@ -27,7 +27,7 @@
 
 ## Vérifications complémentaires
 
-- Suite actuelle : 81 cas xUnit, incluant les transports HTTP/gRPC-Web et l’archive locale ; aucun test navigateur n’est inclus dans ce nombre.
+- Suite actuelle : 142 cas xUnit, incluant les transports HTTP/gRPC-Web, les pouvoirs et l’archive locale ; aucun test navigateur n’est inclus dans ce nombre.
 - Audit : `dotnet list BattleShip.slnx package --vulnerable --include-transitive`.
 - Publication : `dotnet publish BattleShip.API/BattleShip.API.csproj --configuration Release` puis `dotnet publish BattleShip.App/BattleShip.App.csproj --configuration Release`.
 - Le workload `wasm-tools` est optionnel ; l’application publiée a été vérifiée dans Chrome sans celui-ci.
@@ -41,6 +41,10 @@
 - Le service client d’archive est lié comme source dans `BattleShip.Tests` pour tester le stockage via un faux `IJSRuntime`, sans référence au projet WebAssembly.
 - L’archive utilise un contexte System.Text.Json généré pour rester compatible avec la publication Blazor optimisée en taille. Un échec de stockage doit produire un avertissement, pas invalider un tour accepté.
 - Les archives sont propres à l’origine et au profil de navigateur. Leur consultation reste possible sans API une fois l’application chargée, mais le site n’est pas une PWA hors ligne.
+- Pouvoirs : seul un tir normal accepté rapporte 1 point (plafond `PowerRules.MaxSkillPoints` = 10). Coûts : mine 2, carré 2 × 2 = 4, ligne/colonne = 6. Un pouvoir consomme le tour sans rapporter de point ; un pouvoir refusé (invalide, trop coûteux ou sans nouvelle cible) ne doit ni dépenser de points ni modifier le journal.
+- La mine se pose sur la grille du joueur (`CellDto.HasMine`), ne protège pas la case : le tir adverse est appliqué puis renvoyé sur la même coordonnée ; un double naufrage donne `GameStatus.Draw`.
+- Le carré 2 × 2 utilise la case choisie comme coin supérieur gauche ; les zones ne touchent que les cases non visées. La géométrie est définie dans `PowerRules.Targets`, partagée par le moteur et la prévisualisation Blazor.
+- Endpoint des pouvoirs : `POST /api/games/{id}/powers` avec `UsePowerRequest` ; le contrat gRPC étend `TurnMessage`/`GameStatusReply` par champs ajoutés (compatibilité proto3).
 
 ## Organisation des sources
 

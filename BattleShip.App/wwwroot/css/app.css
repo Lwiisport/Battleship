@@ -110,6 +110,23 @@ button.cell-unknown:hover:not(:disabled) { background: #c1ddd1; border-color: va
 .history-actions button + button { margin-left: .4rem; }
 .archive-heading { margin-top: 1.4rem; flex-wrap: wrap; }
 .archive-heading h3 { margin: 0; font-size: 1rem; }
+.power-controls { padding: 1.2rem; margin-bottom: 1.25rem; }
+.power-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+.power-heading .eyebrow { margin-bottom: .4rem; }
+.skill-gauge { display: grid; gap: .4rem; min-width: 10rem; font-size: .85rem; }
+.skill-gauge meter { width: 100%; height: 1rem; accent-color: var(--teal); }
+.power-options { border: 0; margin: 1rem 0 0; padding: 0; display: flex; gap: .6rem; flex-wrap: wrap; }
+.power-button[aria-pressed="true"], .power-button[aria-pressed="true"]:hover { color: white; background: var(--teal); border-color: var(--teal); }
+.power-options:disabled .power-button { opacity: .5; cursor: default; }
+.cell { position: relative; }
+.cell.target-preview, .target-preview { background: #b9e7d5; border-color: #087052; box-shadow: inset 0 0 0 2px #087052; color: #12382e; }
+.cell.target-known { outline: 2px dashed #688d82; outline-offset: -3px; }
+.cell.target-invalid { background: #ffddd6; box-shadow: inset 0 0 0 2px #a33721; }
+.mine-marker { position: absolute; right: 1px; top: 1px; padding: 0 .15rem; background: #ffda7c; color: #533600; border-radius: 3px; font-size: .6rem; line-height: 1.1; }
+.mine-swatch { background: #ffda7c; color: #533600; }
+.target-hint { min-height: 2.8em; color: var(--teal); font-size: .72rem; line-height: 1.4; margin: .65rem 0 0 1.5rem; }
+.turns-table { min-width: 610px; }
+.mine-event { color: #765117; margin-top: .35rem; max-width: 25rem; }
 @media (max-width: 850px) {
     .boards { grid-template-columns: 1fr; }
     .board-panel { max-width: 580px; width: 100%; margin: auto; }

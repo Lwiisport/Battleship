@@ -1,0 +1,46 @@
+<section class="panel power-controls" aria-label="Pouvoirs">
+    <div class="power-heading">
+        <div><p class="eyebrow">ARSENAL TACTIQUE</p><h2>Points de compétence</h2></div>
+        <div class="skill-gauge">
+            <strong aria-live="polite">@SkillPoints / @PowerRules.MaxSkillPoints points</strong>
+            <meter min="0" max="@PowerRules.MaxSkillPoints" value="@SkillPoints" aria-label="Points de compétence">@SkillPoints</meter>
+        </div>
+    </div>
+    <fieldset class="power-options" disabled="@Disabled">
+        <legend class="sr-only">Choisir une action</legend>
+        @foreach (var action in Actions)
+        {
+            <button type="button" class="secondary power-button" aria-pressed="@(SelectedAction == action ? "true" : "false")"
+                    disabled="@(SkillPoints < PowerRules.Cost(action))" @onclick="() => OnSelect.InvokeAsync(action)">
+                @Label(action)
+            </button>
+        }
+    </fieldset>
+    <p class="history-note" role="status">@Instruction</p>
+    <p class="history-note">Seuls les tirs normaux rapportent 1 point. Chaque pouvoir consomme un tour et ne rapporte aucun point.</p>
+</section>
+
+@code {
+    [Parameter] public int SkillPoints { get; set; }
+    [Parameter] public GameAction SelectedAction { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<GameAction> OnSelect { get; set; }
+
+    private static readonly GameAction[] Actions = Enum.GetValues<GameAction>();
+    private string Instruction => SelectedAction switch
+    {
+        GameAction.Mine => "Cliquez sur une case non visée de votre grille, avec ou sans navire. La mine renvoie le tir sans vous protéger.",
+        GameAction.SquareStrike => "Choisissez le coin supérieur gauche du carré 2 × 2, de A1 à I9. La zone s’affiche au survol ou au focus clavier.",
+        GameAction.RowStrike => "Survolez une case adverse pour viser sa ligne entière, puis cliquez pour confirmer.",
+        GameAction.ColumnStrike => "Survolez une case adverse pour viser sa colonne entière, puis cliquez pour confirmer.",
+        _ => "Choisissez une case adverse non explorée. Un tir valide rapporte 1 point, jusqu’à 10."
+    };
+    private static string Label(GameAction action) => action switch
+    {
+        GameAction.Mine => "Mine (2 points)",
+        GameAction.SquareStrike => "Carré 2 × 2 (4 points)",
+        GameAction.RowStrike => "Ligne (6 points)",
+        GameAction.ColumnStrike => "Colonne (6 points)",
+        _ => "Tir normal (+1)"
+    };
+}

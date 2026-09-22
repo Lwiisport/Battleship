@@ -47,8 +47,8 @@ public sealed class HttpGameTests(ApiFactory factory) : IClassFixture<ApiFactory
         var restored = await ReadState(fetched);
         Assert.Equal(initial.CreatedAtUtc, restored.CreatedAtUtc);
         Assert.Equal(2, restored.Turns.Length);
-        Assert.Equal(firstState.Turns[0], restored.Turns[0]);
-        Assert.Equal(secondState.Turns, restored.Turns);
+        Assert.Equal(JsonSerializer.Serialize(firstState.Turns[0]), JsonSerializer.Serialize(restored.Turns[0]));
+        Assert.Equal(JsonSerializer.Serialize(secondState.Turns), JsonSerializer.Serialize(restored.Turns));
         Assert.DoesNotContain(restored.OpponentGrid, cell => cell.State is CellState.Ship or CellState.Water);
     }
 

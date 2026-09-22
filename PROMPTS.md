@@ -78,6 +78,30 @@ L’arbre final inclut ce document : son SHA ne peut pas être inscrit dans son 
 
 **Réalisation :** `README.md`, `PROMPTS.md`, `REVUE-IA.md` et `docs/adr/ADR-001-ARCHITECTURE-GRPC-HTTP.md`. Les limites de persistance, d’authentification, de publication et d’expiration sont explicites. Les consignes de vérification sont également conservées dans `AGENTS.md`.
 
+## Évolutions postérieures aux sept étapes
+
+Ces demandes ultérieures ont été commitées directement, sans instantanés intermédiaires.
+
+### Historique des parties — `092df61`
+
+**Demande reformulée :** conserver un historique de partie.
+
+**Réalisation :** `GameStateDto.CreatedAtUtc` et `Turns` exposés en HTTP et gRPC-Web ; archive locale des 50 dernières parties dans `localStorage` avec consultation et reprise ; `GameHistoryStore` sérialisé via un contexte System.Text.Json généré. **81 cas réussis.**
+
+### Réorganisation par fonctionnalité — `d3299df`
+
+**Demande reformulée :** regrouper les composants qui vont ensemble dans chaque projet, y compris les tests.
+
+**Réalisation :** dossiers `Engine`/`Contracts`/`Enums`/`Exceptions` dans Models ; `Features/Games/{Http,Grpc,Storage}` dans l’API ; `Features/{Games,History}` et `Shared` dans l’App ; `Unit/{Engine,Storage,Validation,History}`, `Integration/{Http,Grpc}` et `Infrastructure` dans les tests. **81 cas réussis.**
+
+### Pouvoirs et points de compétence — `feat(game): add skill powers and target previews`
+
+**Demande reformulée :** 1 point de compétence par tir (10 maximum) ; mine à 2 points renvoyant un tir sur la même case ; carré 2 × 2 à 4 points ; ligne ou colonne entière à 6 points ; prévisualisation des cases ciblées au survol ; mise à jour des fichiers Markdown.
+
+**Décisions confirmées avec le demandeur :** seuls les tirs normaux rapportent des points ; poser une mine consomme le tour ; le tir adverse sur une mine est appliqué puis renvoyé ; un double naufrage par renvoi donne un match nul ; les pouvoirs invalides ou trop coûteux ne consomment ni points ni tour ; le carré utilise la case choisie comme coin supérieur gauche ; les cases déjà visées sont ignorées et une zone sans nouvelle cible est refusée.
+
+**Réalisation :** `PowerRules`, `GameAction`, `GameStatus.Draw`, `SkillPoints`, `UsePowerRequest`, endpoint `POST /api/games/{id}/powers`, champs `TurnMessage`/`GameStatusReply` étendus, composant `PowerControls`, prévisualisation survol/focus dans `GameGrid`, historique des mines et tirs de zone, compatibilité des archives antérieures. **142 cas réussis** et parcours Chrome dédié aux pouvoirs.
+
 ## Créer les sept commits, dans l’ordre
 
 Ces commandes sont prévues pour **ce dépôt local encore sans commit**. Les références d’instantanés personnalisées ne sont pas transférées par un clone ordinaire. Après création des commits, l’historique normal suffit et peut être partagé comme tout dépôt Git.

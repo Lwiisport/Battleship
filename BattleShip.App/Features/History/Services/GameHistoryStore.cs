@@ -83,16 +83,40 @@ public sealed class GameHistoryStore(IJSRuntime js)
         && state.Id != Guid.Empty && !string.IsNullOrWhiteSpace(state.PlayerName) && state.PlayerName.Length <= 40
         && state.CreatedAtUtc != default && Enum.IsDefined(state.Status)
         && state.TurnNumber is >= 0 and <= Board.Size * Board.Size
+        && state.SkillPoints is >= 0 and <= PowerRules.MaxSkillPoints
         && ValidGrid(state.PlayerGrid, false) && ValidGrid(state.OpponentGrid, true)
         && state.Turns is not null && state.Turns.Length == state.TurnNumber
-        && state.Turns.Select((turn, index) => turn is not null && turn.Number == index + 1
-            && ValidShot(turn.PlayerShot) && (turn.ComputerShot is null
-                ? state.Status == GameStatus.PlayerWon && index == state.TurnNumber - 1
-                : ValidShot(turn.ComputerShot))).All(valid => valid);
+        && state.Turns.Select((turn, index) => ValidTurn(turn, index, state)).All(valid => valid);
+
+    private static bool ValidTurn(TurnDto? turn, int index, GameStateDto state)
+    {
+        if (turn is null || turn.Number != index + 1 || !Enum.IsDefined(turn.Action)
+            || turn.SkillPointsAfter is < 0 or > PowerRules.MaxSkillPoints)
+            return false;
+        var shots = turn.GetPlayerShots();
+        var target = turn.Target ?? turn.PlayerShot?.Position;
+        if (target is null || PowerRules.Targets(turn.Action, target.Value) is not { Length: > 0 } targets)
+            return false;
+        if (turn.Action == GameAction.Mine)
+        {
+            if (turn.PlayerShot is not null || shots.Count != 0)
+                return false;
+        }
+        else if (shots.Count == 0 || shots.Count > targets.Length || !shots.All(ValidShot)
+            || shots.Select(shot => shot.Position).Distinct().Count() != shots.Count
+            || shots.Any(shot => !targets.Contains(shot.Position)) || turn.PlayerShot != shots[^1])
+            return false;
+        if (turn.ComputerShot is null ? state.Status != GameStatus.PlayerWon || index != state.TurnNumber - 1
+            : !ValidShot(turn.ComputerShot))
+            return false;
+        return turn.MineDetonation is not { } mine || (mine.Position.IsValid && turn.ComputerShot?.Position == mine.Position
+            && (mine.ReflectedShot is null || (ValidShot(mine.ReflectedShot) && mine.ReflectedShot.Position == mine.Position)));
+    }
 
     private static bool ValidGrid(CellDto[]? grid, bool opponent) => grid is { Length: Board.Size * Board.Size }
         && grid.Select((cell, index) => cell is not null && cell.Row == index / Board.Size && cell.Column == index % Board.Size
-            && Enum.IsDefined(cell.State) && (!opponent || cell.State is not (CellState.Ship or CellState.Water))).All(valid => valid);
+            && Enum.IsDefined(cell.State) && (!cell.HasMine || cell.State is CellState.Water or CellState.Ship)
+            && (!opponent || (!cell.HasMine && cell.State is not (CellState.Ship or CellState.Water)))).All(valid => valid);
 
     private static bool ValidShot(ShotDto? shot) => shot is not null && shot.Position.IsValid && Enum.IsDefined(shot.Outcome);
 }

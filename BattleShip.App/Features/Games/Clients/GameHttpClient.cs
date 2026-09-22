@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using BattleShip.Models.Contracts;
 using BattleShip.Models.Engine;
+using BattleShip.Models.Enums;
 
 namespace BattleShip.App.Features.Games.Clients;
 
@@ -33,6 +34,13 @@ public sealed class GameHttpClient(HttpClient http)
         return await ReadAsync(response, cancellationToken);
     }
 
+    public async Task<GameStateDto> UsePowerAsync(Guid id, GameAction action, Position position, CancellationToken cancellationToken)
+    {
+        using var response = await http.PostAsJsonAsync($"api/games/{id}/powers",
+            new UsePowerRequest(action, position.Row, position.Column), JsonOptions, cancellationToken);
+        return await ReadAsync(response, cancellationToken);
+    }
+
     private static async Task<GameStateDto> ReadAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode)
@@ -42,7 +50,7 @@ public sealed class GameHttpClient(HttpClient http)
         var message = response.StatusCode switch
         {
             HttpStatusCode.NotFound => "La partie n’existe plus. Vous pouvez en créer une nouvelle.",
-            HttpStatusCode.Conflict => "Le tir a été refusé. Actualisez la partie avant de continuer.",
+            HttpStatusCode.Conflict => "L’action a été refusée. Actualisez la partie avant de continuer.",
             HttpStatusCode.TooManyRequests => "Trop de requêtes. Patientez une minute avant de réessayer.",
             HttpStatusCode.ServiceUnavailable => "Le serveur est occupé. Réessayez plus tard.",
             _ => "Le serveur a refusé la requête."

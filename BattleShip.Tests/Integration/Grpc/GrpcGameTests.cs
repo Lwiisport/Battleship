@@ -42,10 +42,9 @@ public sealed class GrpcGameTests(ApiFactory factory) : IClassFixture<ApiFactory
         Assert.Equal(state.TurnNumber, reply.TurnNumber);
         Assert.Equal(state.CreatedAtUtc, reply.CreatedAtUtc.ToDateTimeOffset());
         Assert.Equal(2, reply.Turns.Count);
-        Assert.Equal(state.Turns, reply.Turns.Select(turn => new TurnDto(turn.Number,
-            new ShotDto(new Position(turn.PlayerShot.Row, turn.PlayerShot.Column), (ShotOutcome)turn.PlayerShot.Outcome),
-            turn.ComputerShot is null ? null : new ShotDto(new Position(turn.ComputerShot.Row, turn.ComputerShot.Column),
-                (ShotOutcome)turn.ComputerShot.Outcome))));
+        Assert.Equal(state.SkillPoints, reply.SkillPoints);
+        foreach (var (expected, actual) in state.Turns.Zip(reply.Turns))
+            AssertTurn(expected, actual);
         Assert.Equal((int)state.Status, (int)reply.Status);
         Assert.Equal(100, reply.PlayerGrid.Count);
         Assert.Equal(100, reply.OpponentGrid.Count);
@@ -99,6 +98,60 @@ public sealed class GrpcGameTests(ApiFactory factory) : IClassFixture<ApiFactory
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Equal("http://localhost:5221", Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
     }
+
+    [Theory]
+    [InlineData(GameAction.Mine, 2)]
+    [InlineData(GameAction.SquareStrike, 4)]
+    [InlineData(GameAction.RowStrike, 6)]
+    [InlineData(GameAction.ColumnStrike, 6)]
+    public async Task Grpc_web_preserves_power_history_points_and_mines(GameAction action, int cost)
+    {
+        using var http = factory.CreateClient();
+        using var created = await http.PostAsJsonAsync("/api/games", new CreateGameRequest("Alice"));
+        var state = (await created.Content.ReadFromJsonAsync<GameStateDto>(ApiFactory.JsonOptions))!;
+        for (var index = 0; index < cost; index++)
+        {
+            using var fired = await http.PostAsJsonAsync($"/api/games/{state.Id}/fire", new FireRequest(0, index));
+            state = (await fired.Content.ReadFromJsonAsync<GameStateDto>(ApiFactory.JsonOptions))!;
+        }
+        var target = action == GameAction.Mine ? state.PlayerGrid.Last(cell => cell.State is CellState.Water or CellState.Ship)
+            : new CellDto(2, 8, CellState.Unknown);
+        using var powered = await http.PostAsJsonAsync($"/api/games/{state.Id}/powers", new UsePowerRequest(action, target.Row, target.Column));
+        powered.EnsureSuccessStatusCode();
+        state = (await powered.Content.ReadFromJsonAsync<GameStateDto>(ApiFactory.JsonOptions))!;
+        using var channel = CreateChannel(GrpcWebMode.GrpcWeb);
+        var reply = await new GameService.GameServiceClient(channel).GetGameStatusAsync(new GetGameStatusRequest { GameId = state.Id.ToString() });
+        Assert.Equal(state.SkillPoints, reply.SkillPoints);
+        Assert.Equal(state.PlayerGrid.Select(cell => (cell.Row, cell.Column, (int)cell.State, cell.HasMine)),
+            reply.PlayerGrid.Select(cell => (cell.Row, cell.Column, (int)cell.State, cell.HasMine)));
+        Assert.Equal(state.OpponentGrid.Select(cell => (cell.Row, cell.Column, (int)cell.State, cell.HasMine)),
+            reply.OpponentGrid.Select(cell => (cell.Row, cell.Column, (int)cell.State, cell.HasMine)));
+        Assert.Equal(state.Turns.Length, reply.Turns.Count);
+        foreach (var (expected, actual) in state.Turns.Zip(reply.Turns))
+            AssertTurn(expected, actual);
+    }
+
+    private static void AssertTurn(TurnDto expected, TurnMessage actual)
+    {
+        Assert.Equal(expected.Number, actual.Number);
+        Assert.Equal((int)expected.Action, (int)actual.Action);
+        Assert.Equal(expected.SkillPointsAfter, actual.SkillPointsAfter);
+        Assert.Equal(expected.PlayerShot, ReadShot(actual.PlayerShot));
+        Assert.Equal(expected.ComputerShot, ReadShot(actual.ComputerShot));
+        Assert.Equal(expected.Target, actual.Target is null ? null : new Position(actual.Target.Row, actual.Target.Column));
+        Assert.Equal(expected.GetPlayerShots(), actual.PlayerShots.Select(shot => ReadShot(shot)!));
+        if (expected.MineDetonation is { } mine)
+        {
+            Assert.NotNull(actual.MineDetonation);
+            Assert.Equal(mine.Position, new Position(actual.MineDetonation.Position.Row, actual.MineDetonation.Position.Column));
+            Assert.Equal(mine.ReflectedShot, ReadShot(actual.MineDetonation.ReflectedShot));
+        }
+        else
+            Assert.Null(actual.MineDetonation);
+    }
+
+    private static ShotDto? ReadShot(ShotMessage? shot) => shot is null ? null
+        : new ShotDto(new Position(shot.Row, shot.Column), (ShotOutcome)shot.Outcome);
 
     private GrpcChannel CreateChannel(GrpcWebMode mode) => GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
     {

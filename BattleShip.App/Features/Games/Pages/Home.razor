@@ -69,20 +69,22 @@ else
             @(busy ? "Synchronisation…" : game.Status == GameStatus.InProgress ? "EN COURS" : "TERMINÉE")
         </span>
     </section>
+    <PowerControls SkillPoints="game.SkillPoints" SelectedAction="selectedAction" Disabled="@(!CanAct)" OnSelect="SelectAction" />
     <div class="boards" aria-busy="@(busy ? "true" : "false")">
         <section class="panel board-panel">
             <div class="board-heading"><div><p class="eyebrow">DÉFENSE</p><h2>Votre flotte</h2></div>
                 <span>@Remaining(game.PlayerGrid) / 17 cases intactes</span></div>
-            <GameGrid Cells="game.PlayerGrid" Title="Grille joueur" LastShot="game.LastComputerShot?.Position" />
+            <GameGrid Cells="game.PlayerGrid" Title="Grille joueur" LastShot="game.LastComputerShot?.Position"
+                      SelectedAction="selectedAction" CanFire="CanUseSelectedAction" OnSelect="Fire" />
             <p class="shot-report">@ShotText("Ordinateur", game.LastComputerShot)</p>
         </section>
         <section class="panel board-panel enemy-panel">
             <div class="board-heading"><div><p class="eyebrow">OFFENSIVE</p><h2>Flotte adverse</h2></div>
                 <span>@Impacts(game.OpponentGrid) / 17 impacts</span></div>
             <GameGrid Cells="game.OpponentGrid" Title="Grille adverse" IsOpponent="true"
-                      CanFire="@(!busy && !needsSync && game.Status == GameStatus.InProgress)"
-                      LastShot="game.LastPlayerShot?.Position" OnFire="Fire" />
-            <p class="shot-report">@ShotText("Votre tir", game.LastPlayerShot)</p>
+                      CanFire="CanUseSelectedAction" SelectedAction="selectedAction"
+                      LastShot="game.LastPlayerShot?.Position" LastTargets="LastPlayerTargets" OnSelect="Fire" />
+            <p class="shot-report">@PlayerReport</p>
         </section>
     </div>
     <div class="legend" aria-label="Légende des grilles">
@@ -90,6 +92,8 @@ else
         <span><i class="swatch cell-miss">·</i> À l’eau</span>
         <span><i class="swatch cell-hit">×</i> Touché</span>
         <span><i class="swatch cell-sunk">×</i> Coulé</span>
+        <span><i class="swatch mine-swatch">M</i> Mine armée</span>
+        <span><i class="swatch target-preview"></i> Zone ciblée</span>
         <span class="sync-label" role="status">Dernière synchronisation : @transport</span>
     </div>
     <TurnHistory Turns="game.Turns" />
@@ -118,13 +122,31 @@ else
     private string transport = "HTTP";
     private bool busy;
     private bool needsSync;
+    private GameAction selectedAction;
+    private bool CanAct => !busy && !needsSync && game?.Status == GameStatus.InProgress;
+    private bool CanUseSelectedAction => CanAct && game!.SkillPoints >= PowerRules.Cost(selectedAction);
+    private IReadOnlyList<Position> LastPlayerTargets => game?.Turns.LastOrDefault() is not { } turn ? []
+        : turn.GetPlayerShots().Select(shot => shot.Position)
+            .Concat(turn.MineDetonation?.ReflectedShot is { } reflected ? [reflected.Position] : []).ToArray();
+    private string PlayerReport => game?.Turns.LastOrDefault() is not { } turn ? "Aucun tir à signaler."
+        : turn.Action == GameAction.Mine ? $"Mine posée en {(char)('A' + turn.Target!.Value.Row)}{turn.Target.Value.Column + 1}."
+        : turn.Action != GameAction.NormalShot ? $"Attaque spéciale : {turn.GetPlayerShots().Count} nouvelles cases visées."
+        : ShotText("Votre tir", game.LastPlayerShot);
+
+    private void SelectAction(GameAction action)
+    {
+        if (CanAct && game!.SkillPoints >= PowerRules.Cost(action))
+            selectedAction = action;
+    }
 
     private string StatusText => game?.Status switch
     {
         GameStatus.PlayerWon => "Victoire ! La flotte adverse est coulée.",
         GameStatus.ComputerWon => "Défaite. Votre flotte a été coulée.",
+        GameStatus.Draw => "Match nul : les deux flottes ont été coulées.",
         _ when busy => "Transmission en cours…",
         _ when needsSync => "Actualisation nécessaire",
+        _ when selectedAction == GameAction.Mine => "Votre tour : placez une mine sur votre grille.",
         _ => "Votre tour : choisissez une case adverse."
     };
 
@@ -178,9 +200,11 @@ else
         if (game is null || needsSync || game.Status != GameStatus.InProgress)
             return Task.CompletedTask;
         var id = game.Id;
+        var action = selectedAction;
         return Run(async () =>
         {
-            game = await Http.FireAsync(id, position, lifetime.Token);
+            game = action == GameAction.NormalShot ? await Http.FireAsync(id, position, lifetime.Token)
+                : await Http.UsePowerAsync(id, action, position, lifetime.Token);
             transport = "HTTP";
         }, changesGame: true);
     }
@@ -207,6 +231,7 @@ else
         try
         {
             await action();
+            selectedAction = GameAction.NormalShot;
             if (game is not null)
                 await History.RememberAsync(game);
         }

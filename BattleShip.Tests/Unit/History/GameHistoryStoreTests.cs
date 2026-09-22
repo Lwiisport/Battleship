@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using BattleShip.App.Features.History.Services;
 using BattleShip.Models.Contracts;
 using BattleShip.Models.Engine;
@@ -147,6 +148,63 @@ public sealed class GameHistoryStoreTests
         Assert.Equal(GameStatus.PlayerWon, state.Status);
         Assert.Equal(17, state.Turns.Length);
         Assert.Null(state.Turns[^1].ComputerShot);
+    }
+
+    [Theory]
+    [InlineData(GameAction.Mine)]
+    [InlineData(GameAction.SquareStrike)]
+    [InlineData(GameAction.RowStrike)]
+    [InlineData(GameAction.ColumnStrike)]
+    public async Task Powers_and_points_survive_archiving(GameAction action)
+    {
+        var game = new Game("Alice", new Random(42));
+        for (var index = 0; index < 6; index++)
+            game.Fire(new Position(0, index));
+        var target = action == GameAction.Mine ? game.GetState().PlayerGrid.Last(cell => cell.State is CellState.Ship or CellState.Water)
+            : new CellDto(2, 8, CellState.Unknown);
+        var state = game.UsePower(action, new Position(target.Row, target.Column));
+        var storage = new FakeStorage();
+        await new GameHistoryStore(storage).RememberAsync(state);
+        var reopened = new GameHistoryStore(storage);
+        await reopened.LoadAsync();
+        Assert.Null(reopened.Warning);
+        Assert.Equal(JsonSerializer.Serialize(state), JsonSerializer.Serialize(Assert.Single(reopened.Entries).State));
+    }
+
+    [Fact]
+    public async Task Archives_without_power_fields_remain_readable()
+    {
+        var state = new Game("Alice", new Random(42)).Fire(new Position(0, 0));
+        var json = JsonSerializer.SerializeToNode(new[] { new GameHistoryEntry(state, DateTimeOffset.UtcNow) })!;
+        var oldState = json[0]!["State"]!.AsObject();
+        oldState.Remove("SkillPoints");
+        foreach (var grid in new[] { "PlayerGrid", "OpponentGrid" })
+            foreach (var cell in oldState[grid]!.AsArray())
+                cell!.AsObject().Remove("HasMine");
+        foreach (var turn in oldState["Turns"]!.AsArray())
+            foreach (var property in new[] { "Action", "Target", "PlayerShots", "MineDetonation", "SkillPointsAfter" })
+                turn!.AsObject().Remove(property);
+        var storage = new FakeStorage { Json = json.ToJsonString() };
+        var reopened = new GameHistoryStore(storage);
+        await reopened.LoadAsync();
+        Assert.Null(reopened.Warning);
+        var restored = Assert.Single(reopened.Entries).State;
+        Assert.Equal(0, restored.SkillPoints);
+        Assert.Equal(state.Turns[0].PlayerShot, Assert.Single(restored.Turns[0].GetPlayerShots()));
+        Assert.Equal(GameAction.NormalShot, restored.Turns[0].Action);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(11)]
+    public async Task Archives_with_impossible_skill_points_are_rejected(int points)
+    {
+        var state = new Game("Alice", new Random(42)).GetState() with { SkillPoints = points };
+        var storage = new FakeStorage { Json = JsonSerializer.Serialize(new[] { new GameHistoryEntry(state, DateTimeOffset.UtcNow) }) };
+        var store = new GameHistoryStore(storage);
+        await store.LoadAsync();
+        Assert.Empty(store.Entries);
+        Assert.NotNull(store.Warning);
     }
 
     private sealed class FakeStorage : IJSRuntime

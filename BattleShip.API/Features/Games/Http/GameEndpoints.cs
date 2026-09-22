@@ -16,6 +16,7 @@ public static class GameEndpoints
         group.MapPost("/", Create).WithName("CreateGame");
         group.MapGet("/{id:guid}", Get).WithName("GetGame");
         group.MapPost("/{id:guid}/fire", Fire).WithName("Fire");
+        group.MapPost("/{id:guid}/powers", UsePower).WithName("UsePower");
     }
 
     private static async Task<Results<Created<GameStateDto>, ValidationProblem, ProblemHttpResult>> Create(
@@ -42,21 +43,35 @@ public static class GameEndpoints
         CancellationToken cancellationToken)
     {
         var validation = await validator.ValidateAsync(request, cancellationToken);
-        if (!validation.IsValid)
-            return TypedResults.ValidationProblem(validation.ToDictionary());
+        return validation.IsValid ? Execute(id, store, game => game.Fire(new Position(request.Row, request.Column)))
+            : TypedResults.ValidationProblem(validation.ToDictionary());
+    }
+
+    private static async Task<Results<Ok<GameStateDto>, ValidationProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> UsePower(
+        Guid id, UsePowerRequest request, IValidator<UsePowerRequest> validator, GameStore store,
+        CancellationToken cancellationToken)
+    {
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        return validation.IsValid ? Execute(id, store, game => game.UsePower(request.Action, new Position(request.Row, request.Column)))
+            : TypedResults.ValidationProblem(validation.ToDictionary());
+    }
+
+    private static Results<Ok<GameStateDto>, ValidationProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>> Execute(
+        Guid id, GameStore store, Func<Game, GameStateDto> action)
+    {
         var game = store.Find(id);
         if (game is null)
             return MissingGame();
         try
         {
-            return TypedResults.Ok(game.Fire(new Position(request.Row, request.Column)));
+            return TypedResults.Ok(action(game));
         }
         catch (GameRuleException exception)
         {
             return TypedResults.Conflict(new ProblemDetails
             {
                 Status = StatusCodes.Status409Conflict,
-                Title = "Tir refusé",
+                Title = "Action refusée",
                 Detail = exception.Message,
                 Extensions = { ["code"] = exception.Error.ToString() }
             });

@@ -2,20 +2,36 @@
     <summary>@Title <span class="history-count">@Turns.Count tour(s)</span></summary>
     @if (Turns.Count == 0)
     {
-        <p class="history-note">Aucun tir n’a encore été effectué.</p>
+        <p class="history-note">Aucune action n’a encore été effectuée.</p>
     }
     else
     {
         <div class="history-scroll" tabindex="0" role="region" aria-label="@Title">
-            <table class="history-table" aria-label="@Title">
-                <thead><tr><th scope="col">Tour</th><th scope="col">Votre tir</th><th scope="col">Ordinateur</th></tr></thead>
+            <table class="history-table turns-table" aria-label="@Title">
+                <thead><tr><th scope="col">Tour</th><th scope="col">Action</th><th scope="col">Vos tirs / mine</th><th scope="col">Ordinateur</th><th scope="col">Points restants</th></tr></thead>
                 <tbody>
                     @foreach (var turn in Turns.Reverse())
                     {
                         <tr @key="turn.Number">
                             <th scope="row">@turn.Number</th>
-                            <td>@ShotText(turn.PlayerShot)</td>
+                            <td>@ActionText(turn.Action)</td>
+                            <td>
+                                @if (turn.Action == GameAction.Mine && turn.Target is { } target)
+                                {
+                                    <span>Mine posée en @Coordinate(target)</span>
+                                }
+                                @foreach (var shot in turn.GetPlayerShots())
+                                {
+                                    <div>@ShotText(shot)</div>
+                                }
+                                @if (turn.MineDetonation is { } mine)
+                                {
+                                    <div class="mine-event">Mine déclenchée en @Coordinate(mine.Position) :
+                                        @(mine.ReflectedShot is { } reflected ? $"renvoi {ShotText(reflected)}" : "case adverse déjà visée, aucun tir supplémentaire").</div>
+                                }
+                            </td>
                             <td>@ShotText(turn.ComputerShot)</td>
+                            <td>@(turn.Target is null && turn.PlayerShots is null ? "—" : turn.SkillPointsAfter.ToString())</td>
                         </tr>
                     }
                 </tbody>
@@ -28,8 +44,17 @@
     [Parameter, EditorRequired] public IReadOnlyList<TurnDto> Turns { get; set; } = [];
     [Parameter] public string Title { get; set; } = "Historique des tirs";
 
+    private static string ActionText(GameAction action) => action switch
+    {
+        GameAction.Mine => "Mine (−2)",
+        GameAction.SquareStrike => "Carré 2 × 2 (−4)",
+        GameAction.RowStrike => "Ligne (−6)",
+        GameAction.ColumnStrike => "Colonne (−6)",
+        _ => "Tir normal"
+    };
+    private static string Coordinate(Position position) => $"{(char)('A' + position.Row)}{position.Column + 1}";
     private static string ShotText(ShotDto? shot) => shot is null ? "Aucun tir — fin de partie"
-        : $"{(char)('A' + shot.Position.Row)}{shot.Position.Column + 1} · {shot.Outcome switch
+        : $"{Coordinate(shot.Position)} · {shot.Outcome switch
         {
             ShotOutcome.Miss => "À l’eau",
             ShotOutcome.Hit => "Touché",

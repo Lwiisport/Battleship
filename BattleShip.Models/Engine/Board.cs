@@ -29,6 +29,7 @@ public sealed class Board
 
     public IReadOnlyList<Ship> Ships { get; }
     public int ShotCount => shots.Count;
+    public bool HasBeenShot(Position position) => shots.Contains(position);
     public bool AllShipsSunk => occupancy.Keys.All(shots.Contains);
 
     public static Board CreateRandom(Random random)

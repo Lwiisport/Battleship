@@ -42,9 +42,12 @@ public sealed class GameTests
         Assert.Single(first.Turns);
         Assert.Equal(2, second.Turns.Length);
         Assert.Equal(first.CreatedAtUtc, second.CreatedAtUtc);
-        Assert.Equal(new TurnDto(1, first.LastPlayerShot!, first.LastComputerShot), second.Turns[0]);
-        Assert.Equal(new TurnDto(2, second.LastPlayerShot!, second.LastComputerShot), second.Turns[1]);
-        Assert.Equal(second.Turns, game.GetState().Turns);
+        Assert.Equal(first.LastPlayerShot, second.Turns[0].PlayerShot);
+        Assert.Equal(first.LastComputerShot, second.Turns[0].ComputerShot);
+        Assert.Equal(second.LastPlayerShot, second.Turns[1].PlayerShot);
+        Assert.Equal(second.LastComputerShot, second.Turns[1].ComputerShot);
+        Assert.Equal(new[] { 1, 2 }, second.Turns.Select(turn => turn.Number));
+        Assert.Equal(JsonSerializer.Serialize(second.Turns), JsonSerializer.Serialize(game.GetState().Turns));
     }
 
     [Fact]

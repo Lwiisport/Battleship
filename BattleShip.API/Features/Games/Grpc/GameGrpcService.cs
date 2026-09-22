@@ -25,12 +25,14 @@ public sealed class GameGrpcService(GameStore store, IValidator<GetGameStatusReq
             GameId = state.Id.ToString(),
             PlayerName = state.PlayerName,
             TurnNumber = state.TurnNumber,
+            SkillPoints = state.SkillPoints,
             CreatedAtUtc = Timestamp.FromDateTimeOffset(state.CreatedAtUtc),
             Status = state.Status switch
             {
                 GameStatus.InProgress => GamePhase.InProgress,
                 GameStatus.PlayerWon => GamePhase.PlayerWon,
                 GameStatus.ComputerWon => GamePhase.ComputerWon,
+                GameStatus.Draw => GamePhase.Draw,
                 _ => throw new InvalidOperationException("État de partie inconnu.")
             }
         };
@@ -42,9 +44,36 @@ public sealed class GameGrpcService(GameStore store, IValidator<GetGameStatusReq
             reply.LastComputerShot = MapShot(computerShot);
         foreach (var turn in state.Turns)
         {
-            var message = new TurnMessage { Number = turn.Number, PlayerShot = MapShot(turn.PlayerShot) };
+            var message = new TurnMessage
+            {
+                Number = turn.Number,
+                SkillPointsAfter = turn.SkillPointsAfter,
+                Action = turn.Action switch
+                {
+                    GameAction.NormalShot => ActionKind.NormalShot,
+                    GameAction.Mine => ActionKind.Mine,
+                    GameAction.SquareStrike => ActionKind.SquareStrike,
+                    GameAction.RowStrike => ActionKind.RowStrike,
+                    GameAction.ColumnStrike => ActionKind.ColumnStrike,
+                    _ => throw new InvalidOperationException("Action inconnue.")
+                }
+            };
+            if (turn.PlayerShot is { } player)
+                message.PlayerShot = MapShot(player);
             if (turn.ComputerShot is { } shot)
                 message.ComputerShot = MapShot(shot);
+            if (turn.Target is { } target)
+                message.Target = new PositionMessage { Row = target.Row, Column = target.Column };
+            message.PlayerShots.AddRange(turn.GetPlayerShots().Select(MapShot));
+            if (turn.MineDetonation is { } mine)
+            {
+                message.MineDetonation = new MineDetonationMessage
+                {
+                    Position = new PositionMessage { Row = mine.Position.Row, Column = mine.Position.Column }
+                };
+                if (mine.ReflectedShot is { } reflected)
+                    message.MineDetonation.ReflectedShot = MapShot(reflected);
+            }
             reply.Turns.Add(message);
         }
         return reply;
@@ -54,6 +83,7 @@ public sealed class GameGrpcService(GameStore store, IValidator<GetGameStatusReq
     {
         Row = cell.Row,
         Column = cell.Column,
+        HasMine = cell.HasMine,
         State = cell.State switch
         {
             CellState.Unknown => CellKind.Unknown,

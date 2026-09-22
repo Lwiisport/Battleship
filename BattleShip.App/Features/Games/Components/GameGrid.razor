@@ -1,4 +1,4 @@
-<table class="game-grid" aria-label="@Title">
+<table class="game-grid" aria-label="@Title" @onmouseleave="ClearPreview">
     <caption class="sr-only">@Title. Lignes A à J, colonnes 1 à 10.</caption>
     <thead>
         <tr>
@@ -18,14 +18,18 @@
                 {
                     var cell = Cells[row * Board.Size + column];
                     var position = new Position(cell.Row, cell.Column);
-                    var classes = $"cell cell-{cell.State.ToString().ToLowerInvariant()} {(LastShot == position ? "last-shot" : "")}";
-                    <td>
-                        @if (IsOpponent)
+                    var classes = $"cell cell-{cell.State.ToString().ToLowerInvariant()} {(LastShot == position || LastTargets.Contains(position) ? "last-shot" : "")} {PreviewClass(position)}";
+                    <td @onmouseenter="() => Preview(position)">
+                        @if (IsOpponent || SelectedAction == GameAction.Mine)
                         {
                             <button type="button" class="@classes" aria-label="@Label(cell)" title="@Label(cell)"
-                                    disabled="@(!CanFire || cell.State != CellState.Unknown)"
-                                    @onclick="() => OnFire.InvokeAsync(position)">
+                                    disabled="@(!CanTarget(position))" @onfocus="() => Preview(position)" @onblur="ClearPreview"
+                                    @onclick="() => Select(position)">
                                 <span aria-hidden="true">@Symbol(cell.State)</span>
+                                @if (cell.HasMine)
+                                {
+                                    <span class="mine-marker" aria-hidden="true">M</span>
+                                }
                             </button>
                         }
                         else
@@ -33,6 +37,10 @@
                             <span class="@classes" title="@Label(cell)">
                                 <span aria-hidden="true">@Symbol(cell.State)</span>
                                 <span class="sr-only">@Label(cell)</span>
+                                @if (cell.HasMine)
+                                {
+                                    <span class="mine-marker" aria-hidden="true">M</span>
+                                }
                             </span>
                         }
                     </td>
@@ -41,14 +49,62 @@
         }
     </tbody>
 </table>
+<p class="target-hint" aria-live="polite">@PreviewText</p>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<CellDto> Cells { get; set; } = [];
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter] public bool IsOpponent { get; set; }
     [Parameter] public bool CanFire { get; set; }
+    [Parameter] public GameAction SelectedAction { get; set; }
     [Parameter] public Position? LastShot { get; set; }
-    [Parameter] public EventCallback<Position> OnFire { get; set; }
+    [Parameter] public IReadOnlyList<Position> LastTargets { get; set; } = [];
+    [Parameter] public EventCallback<Position> OnSelect { get; set; }
+
+    private Position? previewAnchor;
+    private GameAction previousAction;
+    private bool IsTargetGrid => IsOpponent ? SelectedAction != GameAction.Mine : SelectedAction == GameAction.Mine;
+    private CellDto CellAt(Position position) => Cells[position.Row * Board.Size + position.Column];
+    private bool IsFresh(Position position) => SelectedAction == GameAction.Mine
+        ? CellAt(position) is { HasMine: false, State: CellState.Water or CellState.Ship }
+        : CellAt(position).State == CellState.Unknown;
+
+    private bool CanTarget(Position position) => CanFire && IsTargetGrid
+        && PowerRules.Targets(SelectedAction, position).Any(IsFresh);
+
+    protected override void OnParametersSet()
+    {
+        if (SelectedAction != previousAction || !CanFire)
+            previewAnchor = null;
+        previousAction = SelectedAction;
+    }
+
+    private void Preview(Position position) => previewAnchor = CanFire && IsTargetGrid ? position : null;
+    private void ClearPreview() => previewAnchor = null;
+    private async Task Select(Position position)
+    {
+        if (!CanTarget(position))
+            return;
+        ClearPreview();
+        await OnSelect.InvokeAsync(position);
+    }
+
+    private string PreviewClass(Position position)
+    {
+        if (previewAnchor is not { } anchor || !CanFire || !IsTargetGrid)
+            return "";
+        var targets = PowerRules.Targets(SelectedAction, anchor);
+        if (targets.Length == 0)
+            return position == anchor ? "target-invalid" : "";
+        if (!targets.Contains(position))
+            return "";
+        return !CanTarget(anchor) ? "target-invalid" : IsFresh(position) ? "target-preview" : "target-known";
+    }
+
+    private string PreviewText => previewAnchor is not { } anchor ? ""
+        : !CanTarget(anchor) ? "Cible indisponible : zone hors grille ou cases déjà utilisées."
+        : SelectedAction == GameAction.Mine ? "Une mine sera posée sur cette case."
+        : $"{PowerRules.Targets(SelectedAction, anchor).Count(IsFresh)} case(s) seront visées ; les cases déjà jouées sont ignorées.";
 
     private static string Symbol(CellState state) => state switch
     {
@@ -67,5 +123,5 @@
         CellState.Hit => "touché",
         CellState.Sunk => "coulé",
         _ => "inconnu"
-    }}";
+    }}{(cell.HasMine ? ", mine armée" : "")}";
 }

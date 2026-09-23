@@ -3,7 +3,7 @@ using BattleShip.Models.Enums;
 
 namespace BattleShip.Models.Contracts;
 
-public sealed record CreateGameRequest(string PlayerName);
+public sealed record CreateGameRequest(string PlayerName, Difficulty Difficulty = Difficulty.Easy);
 public sealed record FireRequest(int Row, int Column);
 public sealed record UsePowerRequest(GameAction Action, int Row, int Column);
 public sealed record CellDto(int Row, int Column, CellState State, bool HasMine = false);
@@ -32,4 +32,5 @@ public sealed record GameStateDto(
     ShotDto? LastComputerShot,
     DateTimeOffset CreatedAtUtc,
     TurnDto[] Turns,
-    int SkillPoints = 0);
+    int SkillPoints = 0,
+    Difficulty Difficulty = Difficulty.Easy);

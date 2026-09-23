@@ -26,7 +26,7 @@ public static class GameEndpoints
         var validation = await validator.ValidateAsync(request, cancellationToken);
         if (!validation.IsValid)
             return TypedResults.ValidationProblem(validation.ToDictionary());
-        if (!store.TryCreate(request.PlayerName, out var game))
+        if (!store.TryCreate(request.PlayerName, request.Difficulty, out var game))
             return TypedResults.Problem(statusCode: StatusCodes.Status503ServiceUnavailable,
                 title: "Serveur occupé", detail: "Le nombre maximal de parties actives est atteint.");
         return TypedResults.Created($"/api/games/{game.Id}", game.GetState());

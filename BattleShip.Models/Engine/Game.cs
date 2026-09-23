@@ -9,7 +9,7 @@ public sealed class Game
     private readonly object gate = new();
     private readonly Board playerBoard;
     private readonly Board computerBoard;
-    private readonly Queue<Position> computerTargets;
+    private readonly ComputerOpponent opponent;
     private readonly List<TurnDto> turns = [];
     private readonly HashSet<Position> mines = [];
     private GameStatus status = GameStatus.InProgress;
@@ -19,24 +19,31 @@ public sealed class Game
     private ShotDto? lastComputerShot;
 
     public Game(string playerName, Random? random = null, TimeProvider? clock = null)
+        : this(playerName, Difficulty.Easy, random, clock) { }
+
+    public Game(string playerName, Difficulty difficulty, Random? random = null, TimeProvider? clock = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(playerName);
         if (playerName.Trim().Length > 40)
             throw new ArgumentException("Le nom doit contenir au maximum 40 caractères.", nameof(playerName));
+        if (!Enum.IsDefined(difficulty))
+            throw new ArgumentException("La difficulté est inconnue.", nameof(difficulty));
         random ??= Random.Shared;
         Id = Guid.NewGuid();
         CreatedAtUtc = (clock ?? TimeProvider.System).GetUtcNow();
         PlayerName = playerName.Trim();
+        Difficulty = difficulty;
         playerBoard = Board.CreateRandom(random);
         computerBoard = Board.CreateRandom(random);
         var targets = playerBoard.AvailableTargets();
         random.Shuffle(targets);
-        computerTargets = new Queue<Position>(targets);
+        opponent = new ComputerOpponent(difficulty, new Queue<Position>(targets), random);
     }
 
     public Guid Id { get; }
     public string PlayerName { get; }
     public DateTimeOffset CreatedAtUtc { get; }
+    public Difficulty Difficulty { get; }
 
     public GameStateDto GetState()
     {
@@ -95,7 +102,7 @@ public sealed class Game
             }
             else
             {
-                var computerTarget = computerTargets.Dequeue();
+                var computerTarget = opponent.ChooseTarget(playerBoard.ToGrid(revealShips: false));
                 lastComputerShot = playerBoard.Fire(computerTarget);
                 if (mines.Remove(computerTarget))
                     detonation = new MineDetonationDto(computerTarget,
@@ -116,5 +123,5 @@ public sealed class Game
     private GameStateDto Snapshot() => new(Id, PlayerName, status, turnNumber,
         playerBoard.ToGrid(revealShips: true).Select(cell => cell with { HasMine = mines.Contains(new Position(cell.Row, cell.Column)) }).ToArray(),
         computerBoard.ToGrid(revealShips: false), lastPlayerShot, lastComputerShot, CreatedAtUtc,
-        turns.Select(turn => turn with { PlayerShots = turn.PlayerShots?.ToArray() }).ToArray(), skillPoints);
+        turns.Select(turn => turn with { PlayerShots = turn.PlayerShots?.ToArray() }).ToArray(), skillPoints, Difficulty);
 }

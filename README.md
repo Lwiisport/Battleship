@@ -37,7 +37,7 @@ dotnet run --project BattleShip.App --configuration Release --no-build --launch-
 - API : <http://localhost:5247/api/games>
 - OpenAPI, en environnement Development : <http://localhost:5247/openapi/v1.json>
 
-Saisir un nom, créer une partie et cliquer sur une case adverse. L’ordinateur répond automatiquement. Chaque tir normal accepté rapporte un point de compétence, dépensable en pouvoirs (mine, carré 2 × 2, ligne ou colonne entière). Les boutons **Actualiser HTTP** et **Actualiser gRPC-Web** permettent de lire le même état par les deux transports.
+Saisir un nom, choisir la difficulté de l’adversaire, créer une partie et cliquer sur une case adverse. L’ordinateur répond automatiquement. Chaque tir normal accepté rapporte un point de compétence, dépensable en pouvoirs (mine, carré 2 × 2, ligne ou colonne entière). Les boutons **Actualiser HTTP** et **Actualiser gRPC-Web** permettent de lire le même état par les deux transports.
 
 Le lien `/?game=<id>` conserve l’identifiant courant : recharger la page reprend la partie tant qu’elle existe. Ce lien donne accès à la partie ; ne pas le partager si elle doit rester privée.
 
@@ -64,6 +64,18 @@ Si le stockage est plein, interdit ou illisible, un avertissement s’affiche et
 - Sur la grille cible, le **survol** et le **focus clavier** prévisualisent les cases concernées : zone disponible, zone invalide ou cases déjà jouées. La prévisualisation ne révèle jamais les navires adverses cachés.
 - Les mines armées apparaissent sur la grille du joueur ; les détonations et les tirs renvoyés figurent dans l’historique des tours et dans les archives locales.
 
+## Difficulté de l’adversaire
+
+La difficulté est choisie à la création de la partie et affichée dans l’en-tête ainsi que dans l’historique des parties.
+
+| Niveau | Comportement |
+| --- | --- |
+| **Facile** | Tirs purement aléatoires, sans tenir compte des résultats (comportement historique du jeu). |
+| **Normal** | Joue comme un humain : après une case touchée, il vise ses voisines et prolonge les alignements, mais environ un tir sur cinq retombe au hasard — il fait des erreurs. |
+| **Difficile** | Recalcule à chaque tour la case la plus probable : il énumère tous les placements valides des navires restants compatibles avec les tirs observés et pondère fortement ceux qui couvrent les cases touchées. |
+
+L’adversaire ne connaît que ce qu’un joueur réel verrait : la grille observée (`Unknown`, `Miss`, `Hit`, `Sunk`), jamais la position des navires. Les navires coulés sont retirés des tailles restantes dans le calcul probabiliste ; deux navires coulés accolés sont déduits par combinaison gloutonne des tailles. La difficulté se règle dans le formulaire de création (présélection **Normal**) ou via `CreateGameRequest.Difficulty` ; un champ absent conserve `Easy` pour compatibilité avec les clients existants.
+
 ## Fonctionnalités et règles
 
 - Deux grilles de 10 × 10, coordonnées API indexées de **0 à 9** ; affichage de A1 à J10.
@@ -73,7 +85,7 @@ Si le stockage est plein, interdit ou illisible, un avertissement s’affiche et
 - Un tir révèle `Miss`, `Hit` ou `Sunk`. Lorsqu’un navire est coulé, toutes ses cases déjà touchées deviennent `Sunk`.
 - Un tir hors grille, répété, ou effectué après la fin de partie est refusé sans mutation.
 - Un tour accepté comprend l’action du joueur puis le tir de l’ordinateur, sauf victoire immédiate ou match nul.
-- L’ordinateur mélange les 100 coordonnées puis les consomme sans répétition. Il ne consulte pas la position des navires pour choisir ses cibles.
+- L’ordinateur ne consulte jamais la position des navires pour choisir ses cibles : en facile il consomme une permutation des coordonnées, en normal et difficile il exploite uniquement les résultats de tirs observés.
 - Un verrou par partie protège le tour complet et les instantanés de lecture.
 - Interface responsive, boutons utilisables au clavier, libellés de coordonnées, annonces de statut et erreurs lisibles.
 - Après une réponse réseau incertaine à un tir, les tirs sont bloqués jusqu’à une actualisation réussie. Aucun rejeu automatique de POST.
@@ -103,7 +115,7 @@ Décision détaillée : [ADR-001](docs/adr/ADR-001-ARCHITECTURE-GRPC-HTTP.md).
 
 ```text
 BattleShip.Models/
-├── Engine/                    Board, Game, Ship, Position, ShipSpecification, PowerRules
+├── Engine/                    Board, Game, Ship, Position, ShipSpecification, PowerRules, ComputerOpponent
 ├── Contracts/                 Requêtes et DTO de réponse
 ├── Enums/                     États, types de navire et résultats
 └── Exceptions/                Erreurs métier
@@ -134,7 +146,7 @@ BattleShip.App/
 BattleShip.Tests/
 ├── Infrastructure/            Fabrique de serveur et source client liée
 ├── Unit/
-│   ├── Engine/                Placement, masquage, tours, pouvoirs et concurrence
+│   ├── Engine/                Placement, masquage, tours, pouvoirs, difficultés et concurrence
 │   ├── Storage/               Capacité et expiration du stockage API
 │   ├── Validation/            Validators HTTP et gRPC sans serveur
 │   └── History/               Archivage local via un faux IJSRuntime
@@ -168,7 +180,7 @@ Création :
 ```bash
 curl -i http://localhost:5247/api/games \
   -H 'Content-Type: application/json' \
-  -d '{"playerName":"Alice"}'
+  -d '{"playerName":"Alice","difficulty":"Normal"}'
 ```
 
 Remplacer la valeur suivante par l’`id` reçu :
@@ -184,7 +196,7 @@ curl -i "http://localhost:5247/api/games/$GAME_ID/powers" \
   -d '{"action":"SquareStrike","row":0,"column":0}'
 ```
 
-`GameStateDto` contient `id`, `playerName`, `status`, `turnNumber`, `createdAtUtc`, `skillPoints`, deux tableaux de 100 cellules, les derniers tirs et `turns`. Chaque `TurnDto` contient `number`, `action`, `target`, `playerShot`, `playerShots` (tirs de zone éventuels), `computerShot` (nul si le joueur vient de gagner), `mineDetonation` et `skillPointsAfter`. Les actions refusées ne sont pas ajoutées à ce journal. Une cellule contient `row`, `column`, `state` et `hasMine` (visible uniquement sur la grille du joueur). La réponse n’expose ni objet `Board`, ni liste de positions des navires adverses. Les enums JSON sont des chaînes.
+`GameStateDto` contient `id`, `playerName`, `status`, `difficulty`, `turnNumber`, `createdAtUtc`, `skillPoints`, deux tableaux de 100 cellules, les derniers tirs et `turns`. Chaque `TurnDto` contient `number`, `action`, `target`, `playerShot`, `playerShots` (tirs de zone éventuels), `computerShot` (nul si le joueur vient de gagner), `mineDetonation` et `skillPointsAfter`. Les actions refusées ne sont pas ajoutées à ce journal. Une cellule contient `row`, `column`, `state` et `hasMine` (visible uniquement sur la grille du joueur). La réponse n’expose ni objet `Board`, ni liste de positions des navires adverses. Les enums JSON sont des chaînes.
 
 Un pouvoir se déclenche avec `UsePowerRequest { action, row, column }`, où `action` vaut `Mine`, `SquareStrike`, `RowStrike` ou `ColumnStrike` :
 
@@ -193,7 +205,7 @@ Un pouvoir se déclenche avec `UsePowerRequest { action, row, column }`, où `ac
 - Service : `battleship.v1.GameService`.
 - Méthode unaire : `GetGameStatus`.
 - Requête : `GetGameStatusRequest { game_id }`.
-- Réponse : `GameStatusReply`, avec grilles typées, phase (dont `DRAW`), numéro du tour, points de compétence, derniers tirs, date UTC de création (`Timestamp`) et historique complet (`TurnMessage` : action, cible, tirs de zone, détonation de mine et points après le tour).
+- Réponse : `GameStatusReply`, avec grilles typées, phase (dont `DRAW`), difficulté (`DifficultyLevel`), numéro du tour, points de compétence, derniers tirs, date UTC de création (`Timestamp`) et historique complet (`TurnMessage` : action, cible, tirs de zone, détonation de mine et points après le tour).
 - UUID invalide ou vide : `RpcException` / `InvalidArgument`.
 - Partie inconnue ou expirée : `RpcException` / `NotFound`.
 
@@ -230,7 +242,7 @@ dotnet test BattleShip.Tests/BattleShip.Tests.csproj --configuration Release --n
 dotnet list BattleShip.slnx package --vulnerable --include-transitive
 ```
 
-À la livraison : **142 cas xUnit réussis**, aucun test ignoré, compilation sans avertissement ni erreur et aucune vulnérabilité connue signalée par les sources NuGet consultées. Ce dernier résultat dépend de la date et du catalogue d’avis disponibles, et n’est pas une garantie d’absence de vulnérabilité.
+À la livraison : **169 cas xUnit réussis**, aucun test ignoré, compilation sans avertissement ni erreur et aucune vulnérabilité connue signalée par les sources NuGet consultées. Ce dernier résultat dépend de la date et du catalogue d’avis disponibles, et n’est pas une garantie d’absence de vulnérabilité.
 
 Couverture fonctionnelle :
 
@@ -241,11 +253,12 @@ Couverture fonctionnelle :
 - Capacité et expiration avec horloge contrôlée.
 - Équivalence des réponses HTTP et gRPC-Web, modes binaire et texte, dates et historique complet des tours.
 - Pouvoirs : gains et plafond de points, coûts, refus sans mutation, zones 2 × 2 et ligne/colonne, pose et détonation de mine, tir renvoyé, match nul et validator `UsePowerRequest`.
-- Archivage local : restauration, déduplication, protection contre les instantanés plus anciens, borne de 50 parties, archives invalides ou avec points impossibles, compatibilité des archives antérieures aux pouvoirs et reprise après quota dépassé.
+- Difficultés : file mélangée en facile, poursuite des touches avec erreurs en normal, densité de probabilité en difficile (voisinage des touches, prolongement des lignes, navires coulés retirés), comparaison de vitesse de destruction et validation de la valeur reçue.
+- Archivage local : restauration, déduplication, protection contre les instantanés plus anciens, borne de 50 parties, archives invalides ou avec points impossibles, compatibilité des archives antérieures aux pouvoirs et à la difficulté, et reprise après quota dépassé.
 
 Le service client `Features/History/Services/GameHistoryStore.cs` est lié comme source sous `Infrastructure/Client` dans les tests pour vérifier son implémentation réelle sans charger l’application WebAssembly ni dupliquer les types Protobuf. Un faux `IJSRuntime` simule le stockage ; aucune dépendance NuGet supplémentaire n’est nécessaire.
 
-Un parcours Chrome automatisé a également été exécuté sur le serveur de développement puis sur les fichiers publiés : création, tir, actualisations par les deux transports, rechargement, affichage à 375 px, réponse de tir perdue, resynchronisation, fin de partie et redémarrage. Un second parcours couvre les pouvoirs : jauge de points, activation des boutons, prévisualisation des zones au survol et au focus clavier sans révéler les navires, carré 2 × 2, pose de mine, ligne entière et conservation de l’historique après rechargement. Ces contrôles navigateur sont externes au dépôt et ne sont pas inclus dans les tests xUnit.
+Un parcours Chrome automatisé a également été exécuté sur le serveur de développement puis sur les fichiers publiés : création, tir, actualisations par les deux transports, rechargement, affichage à 375 px, réponse de tir perdue, resynchronisation, fin de partie et redémarrage. Un second parcours couvre les pouvoirs : jauge de points, activation des boutons, prévisualisation des zones au survol et au focus clavier sans révéler les navires, carré 2 × 2, pose de mine, ligne entière et conservation de l’historique après rechargement. Un troisième vérifie le choix de difficulté : trois options, présélection Normal, libellé dans l’en-tête et création en difficile. Ces contrôles navigateur sont externes au dépôt et ne sont pas inclus dans les tests xUnit.
 
 Le parcours de l’historique a également été vérifié dans Chrome, en développement et sur publication : plusieurs parties, consultation sans remplacer la partie active, reprise, rechargement, API inaccessible, réponse 404 simulant une partie expirée, récupération d’un tir accepté dont la réponse a été perdue, stockage plein puis rétabli et contenu local corrompu. Aucun échec navigateur non géré n’a été observé.
 

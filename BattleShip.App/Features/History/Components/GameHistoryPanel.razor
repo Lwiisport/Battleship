@@ -19,7 +19,7 @@
                     {
                         <tr @key="entry.State.Id" data-game-id="@entry.State.Id">
                             <td><time datetime="@entry.State.CreatedAtUtc.ToString("O")">@DateText(entry.State.CreatedAtUtc)</time></td>
-                            <th scope="row">@entry.State.PlayerName</th>
+                            <th scope="row">@entry.State.PlayerName <span class="difficulty-tag">@DifficultyText(entry.State.Difficulty)</span></th>
                             <td>@StatusText(entry.State.Status) @(entry.State.Id == ActiveGameId ? "· Affichée" : "")</td>
                             <td>@entry.State.TurnNumber</td>
                             <td class="history-actions">
@@ -66,5 +66,11 @@
         GameStatus.ComputerWon => "Défaite",
         GameStatus.Draw => "Match nul",
         _ => "En cours"
+    };
+    private static string DifficultyText(Difficulty level) => level switch
+    {
+        Difficulty.Easy => "Facile",
+        Difficulty.Hard => "Difficile",
+        _ => "Normal"
     };
 }

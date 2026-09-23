@@ -1,4 +1,5 @@
 using BattleShip.API.Features.Games.Storage;
+using BattleShip.Models.Enums;
 using Microsoft.Extensions.Options;
 
 namespace BattleShip.Tests.Unit.Storage;
@@ -10,13 +11,13 @@ public sealed class GameStoreTests
     {
         var clock = new TestClock();
         var store = new GameStore(Options.Create(new GameStoreOptions { Capacity = 1, LifetimeMinutes = 1 }), clock);
-        Assert.True(store.TryCreate("Alice", out var first));
+        Assert.True(store.TryCreate("Alice", Difficulty.Normal, out var first));
         Assert.NotNull(first);
         Assert.Same(first, store.Find(first.Id));
         Assert.Equal(clock.Now, first.GetState().CreatedAtUtc);
-        Assert.False(store.TryCreate("Bob", out _));
+        Assert.False(store.TryCreate("Bob", Difficulty.Normal, out _));
         clock.Now = clock.Now.AddMinutes(1);
-        Assert.True(store.TryCreate("Bob", out var second));
+        Assert.True(store.TryCreate("Bob", Difficulty.Normal, out var second));
         Assert.NotNull(second);
         Assert.Null(store.Find(first.Id));
         Assert.Same(second, store.Find(second.Id));
@@ -27,10 +28,21 @@ public sealed class GameStoreTests
     {
         var clock = new TestClock();
         var store = new GameStore(Options.Create(new GameStoreOptions { LifetimeMinutes = 1 }), clock);
-        Assert.True(store.TryCreate("Alice", out var game));
+        Assert.True(store.TryCreate("Alice", Difficulty.Normal, out var game));
         Assert.NotNull(game);
         clock.Now = clock.Now.AddMinutes(2);
         Assert.Null(store.Find(game.Id));
+    }
+
+    [Theory]
+    [InlineData(Difficulty.Easy)]
+    [InlineData(Difficulty.Normal)]
+    [InlineData(Difficulty.Hard)]
+    public void Store_keeps_the_requested_difficulty(Difficulty difficulty)
+    {
+        var store = new GameStore(Options.Create(new GameStoreOptions()), new TestClock());
+        Assert.True(store.TryCreate("Alice", difficulty, out var game));
+        Assert.Equal(difficulty, game!.GetState().Difficulty);
     }
 
     private sealed class TestClock : TimeProvider

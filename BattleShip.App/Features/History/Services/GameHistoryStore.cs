@@ -81,7 +81,7 @@ public sealed class GameHistoryStore(IJSRuntime js)
 
     private static bool IsValid(GameStateDto? state) => state is not null
         && state.Id != Guid.Empty && !string.IsNullOrWhiteSpace(state.PlayerName) && state.PlayerName.Length <= 40
-        && state.CreatedAtUtc != default && Enum.IsDefined(state.Status)
+        && state.CreatedAtUtc != default && Enum.IsDefined(state.Status) && Enum.IsDefined(state.Difficulty)
         && state.TurnNumber is >= 0 and <= Board.Size * Board.Size
         && state.SkillPoints is >= 0 and <= PowerRules.MaxSkillPoints
         && ValidGrid(state.PlayerGrid, false) && ValidGrid(state.OpponentGrid, true)

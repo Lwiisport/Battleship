@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using BattleShip.Models.Engine;
+using BattleShip.Models.Enums;
 using Microsoft.Extensions.Options;
 
 namespace BattleShip.API.Features.Games.Storage;
@@ -15,7 +16,7 @@ public sealed class GameStore(IOptions<GameStoreOptions> options, TimeProvider c
     private readonly object gate = new();
     private readonly Dictionary<Guid, Entry> games = [];
 
-    public bool TryCreate(string playerName, [NotNullWhen(true)] out Game? game)
+    public bool TryCreate(string playerName, Difficulty difficulty, [NotNullWhen(true)] out Game? game)
     {
         lock (gate)
         {
@@ -27,7 +28,7 @@ public sealed class GameStore(IOptions<GameStoreOptions> options, TimeProvider c
                 game = null;
                 return false;
             }
-            game = new Game(playerName, clock: clock);
+            game = new Game(playerName, difficulty, clock: clock);
             games.Add(game.Id, new Entry(game, now.AddMinutes(options.Value.LifetimeMinutes)));
             return true;
         }

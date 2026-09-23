@@ -20,7 +20,13 @@ public sealed class GameGrpcClient(GameService.GameServiceClient client)
             _ => throw new InvalidOperationException("État de partie inconnu.")
         }, reply.TurnNumber, reply.PlayerGrid.Select(MapCell).ToArray(), reply.OpponentGrid.Select(MapCell).ToArray(),
             MapShot(reply.LastPlayerShot), MapShot(reply.LastComputerShot), reply.CreatedAtUtc.ToDateTimeOffset(),
-            reply.Turns.Select(MapTurn).ToArray(), reply.SkillPoints);
+            reply.Turns.Select(MapTurn).ToArray(), reply.SkillPoints, reply.Difficulty switch
+            {
+                DifficultyLevel.Easy => Difficulty.Easy,
+                DifficultyLevel.Normal => Difficulty.Normal,
+                DifficultyLevel.Hard => Difficulty.Hard,
+                _ => throw new InvalidOperationException("Difficulté inconnue.")
+            });
     }
 
     private static TurnDto MapTurn(TurnMessage turn) => new(turn.Number, MapShot(turn.PlayerShot), MapShot(turn.ComputerShot),

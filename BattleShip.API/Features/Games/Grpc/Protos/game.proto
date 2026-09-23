@@ -43,6 +43,12 @@ enum ActionKind {
   ACTION_KIND_COLUMN_STRIKE = 4;
 }
 
+enum DifficultyLevel {
+  DIFFICULTY_LEVEL_EASY = 0;
+  DIFFICULTY_LEVEL_NORMAL = 1;
+  DIFFICULTY_LEVEL_HARD = 2;
+}
+
 message PositionMessage {
   int32 row = 1;
   int32 column = 2;
@@ -89,4 +95,5 @@ message GameStatusReply {
   google.protobuf.Timestamp created_at_utc = 9;
   repeated TurnMessage turns = 10;
   int32 skill_points = 11;
+  DifficultyLevel difficulty = 12;
 }

@@ -102,6 +102,12 @@ Ces demandes ultérieures ont été commitées directement, sans instantanés in
 
 **Réalisation :** `PowerRules`, `GameAction`, `GameStatus.Draw`, `SkillPoints`, `UsePowerRequest`, endpoint `POST /api/games/{id}/powers`, champs `TurnMessage`/`GameStatusReply` étendus, composant `PowerControls`, prévisualisation survol/focus dans `GameGrid`, historique des mines et tirs de zone, compatibilité des archives antérieures. **142 cas réussis** et parcours Chrome dédié aux pouvoirs.
 
+### Difficulté de l’adversaire — `feat(game): add ai difficulty levels`
+
+**Demande reformulée :** permettre de choisir la difficulté — facile joue aléatoirement, normal joue comme un humain avec des erreurs, difficile calcule à chaque coup la case la plus probable ; mettre à jour les fichiers Markdown.
+
+**Réalisation :** enum `Difficulty` (`Easy`/`Normal`/`Hard`) choisi à la création ; `ComputerOpponent` dans le moteur — facile conserve la file pré-mélangée historique, normal poursuit les cases touchées en privilégiant le prolongement des lignes avec ~20 % de tirs au hasard, difficile évalue tous les placements valides des navires restants avec forte pondération des cases touchées. L’IA n’observe que `ToGrid(false)` : jamais la position des navires. `GameStateDto.Difficulty` est un paramètre optionnel (archives antérieures → `Easy`, fidèle à leur IA réelle) ; `CreateGameRequest.Difficulty` absent → `Easy` pour compatibilité. Champ `difficulty` ajouté au proto, sélecteur à trois options dans le formulaire (présélection Normal), difficulté affichée dans l’en-tête et l’historique. **169 cas réussis** et parcours Chrome dédié.
+
 ## Créer les sept commits, dans l’ordre
 
 Ces commandes sont prévues pour **ce dépôt local encore sans commit**. Les références d’instantanés personnalisées ne sont pas transférées par un clone ordinaire. Après création des commits, l’historique normal suffit et peut être partagé comme tout dépôt Git.

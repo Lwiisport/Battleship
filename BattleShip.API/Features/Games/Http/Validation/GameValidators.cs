@@ -11,6 +11,8 @@ public sealed class CreateGameRequestValidator : AbstractValidator<CreateGameReq
         RuleFor(request => request.PlayerName)
             .NotEmpty().WithMessage("Le nom du joueur est obligatoire.")
             .MaximumLength(40).WithMessage("Le nom ne doit pas dépasser 40 caractères.");
+        RuleFor(request => request.Difficulty).IsInEnum()
+            .WithMessage("La difficulté doit valoir Easy, Normal ou Hard.");
     }
 }
 

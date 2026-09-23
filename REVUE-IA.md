@@ -1,6 +1,6 @@
 # Revues de code argumentées
 
-Ces quatre revues évaluent le code et des alternatives de conception. Elles ne constituent ni une approbation humaine, ni une certification de sécurité. Les décisions sont reliées aux tests et aux instantanés réellement enregistrés.
+Ces cinq revues évaluent le code et des alternatives de conception. Elles ne constituent ni une approbation humaine, ni une certification de sécurité. Les décisions sont reliées aux tests et aux instantanés réellement enregistrés.
 
 Les messages de commit cités sont les sujets prévus dans [PROMPTS.md](PROMPTS.md). À la rédaction, les commits n’ont pas encore été exécutés ; les hashes ci-dessous désignent des **arbres Git**, jamais des commits inventés. Après création de l’historique, `git log --fixed-strings --grep='<sujet>'` retrouve le commit correspondant.
 
@@ -148,6 +148,35 @@ Référence : `feat(game): add skill powers and target previews`, commit créé 
 
 La prévisualisation calcule les zones côté client via `PowerRules`, dupliquant la géométrie du moteur dans l’interface. Un décalage futur entre les deux copies serait possible ; les tests d’intégration couvrent le serveur, pas le rendu, d’où le contrôle navigateur dédié.
 
+## Revue 5 — Accepté : une IA difficile calculée uniquement sur les tirs observés
+
+### Code examiné
+
+- `BattleShip.Models/Engine/ComputerOpponent.cs` : `ChooseTarget`, `Placements`, `RemainingSizes`, `SunkRuns`.
+- `BattleShip.Models/Engine/Game.cs` : l’adversaire reçoit `playerBoard.ToGrid(revealShips: false)`.
+
+### Alternatives considérées
+
+1. Donner à l’IA difficile un accès direct au `Board` interne, plus simple à coder mais tricheur : elle connaîtrait les positions réelles des navires.
+2. Ne transmettre que la grille observée (`Unknown`, `Miss`, `Hit`, `Sunk`), comme le verrait un joueur humain, et en déduire les probabilités.
+
+### Décision
+
+**Accepté : option 2.** `ChooseTarget` ne reçoit que des `CellDto` masqués : l’impossibilité de tricher est structurelle, pas une convention. La densité de probabilité énumère les placements des navires restants compatibles avec les tirs observés ; les navires coulés sont déduits des lignes de cases `Sunk`. Le niveau normal réutilise la même vue pour poursuivre les touches avec un taux d’erreur, ce qui reproduit un jeu humain sans sophistication probabiliste.
+
+### Preuves
+
+- `DifficultyTests.Hard_shoots_beside_an_isolated_hit` et `Hard_extends_collinear_hits_before_anything_else` : le calcul privilégie les placements couvrant les touches.
+- `DifficultyTests.Hard_damages_the_player_fleet_faster_than_easy` : supériorité mesurée sur 12 graines.
+- `DifficultyTests.Normal_pursues_hit_neighbours_but_still_makes_mistakes` : poursuite majoritaire avec erreurs.
+- `HttpGameTests.Creation_accepts_and_echoes_the_difficulty` et `GrpcGameTests` : la valeur choisie traverse HTTP et gRPC.
+
+Référence : `feat(game): add ai difficulty levels`, commit créé après ces revues.
+
+### Réserve
+
+Deux navires coulés accolés sont indiscernables dans la grille observée : une ligne de `Sunk` de longueur 5 peut être un porte-avions ou un sous-marin collé à un torpilleur. Le calcul retire alors les plus grandes tailles possibles — approximation assumée, rare et sans fuite d’information. Le mode difficile reste plus lent à raisonner qu’un humain sur les fins de partie à deux cases, car il ne privilégie pas la parité du plus petit navire restant.
+
 ## Bilan
 
-Le code accepté protège la frontière des données ; le code adapté corrige un défaut reproduit dans les tests ; l’alternative rejetée évite de confondre une réponse perdue avec une commande non exécutée. Les limites restantes sont assumées et documentées : stockage mémoire mono-instance, absence de comptes utilisateurs, adversaire aléatoire sans stratégie de poursuite, duplication de la géométrie des pouvoirs côté client et contrôle navigateur externe.
+Le code accepté protège la frontière des données ; le code adapté corrige un défaut reproduit dans les tests ; l’alternative rejetée évite de confondre une réponse perdue avec une commande non exécutée. Les limites restantes sont assumées et documentées : stockage mémoire mono-instance, absence de comptes utilisateurs, duplication de la géométrie des pouvoirs côté client, ambiguïté des navires coulés accolés dans le calcul probabiliste et contrôle navigateur externe.

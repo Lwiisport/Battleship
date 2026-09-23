@@ -178,6 +178,7 @@ public sealed class GameHistoryStoreTests
         var json = JsonSerializer.SerializeToNode(new[] { new GameHistoryEntry(state, DateTimeOffset.UtcNow) })!;
         var oldState = json[0]!["State"]!.AsObject();
         oldState.Remove("SkillPoints");
+        oldState.Remove("Difficulty");
         foreach (var grid in new[] { "PlayerGrid", "OpponentGrid" })
             foreach (var cell in oldState[grid]!.AsArray())
                 cell!.AsObject().Remove("HasMine");
@@ -190,8 +191,21 @@ public sealed class GameHistoryStoreTests
         Assert.Null(reopened.Warning);
         var restored = Assert.Single(reopened.Entries).State;
         Assert.Equal(0, restored.SkillPoints);
+        Assert.Equal(Difficulty.Easy, restored.Difficulty);
         Assert.Equal(state.Turns[0].PlayerShot, Assert.Single(restored.Turns[0].GetPlayerShots()));
         Assert.Equal(GameAction.NormalShot, restored.Turns[0].Action);
+    }
+
+    [Fact]
+    public async Task Difficulty_survives_archiving()
+    {
+        var state = new Game("Alice", Difficulty.Hard, new Random(42)).GetState();
+        var storage = new FakeStorage();
+        await new GameHistoryStore(storage).RememberAsync(state);
+        var reopened = new GameHistoryStore(storage);
+        await reopened.LoadAsync();
+        Assert.Null(reopened.Warning);
+        Assert.Equal(Difficulty.Hard, Assert.Single(reopened.Entries).State.Difficulty);
     }
 
     [Theory]

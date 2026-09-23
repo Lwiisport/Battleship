@@ -19,7 +19,7 @@ public sealed class GrpcGameTests(ApiFactory factory) : IClassFixture<ApiFactory
     public async Task Grpc_web_returns_the_same_masked_state_as_http(GrpcWebMode mode)
     {
         using var http = factory.CreateClient();
-        using var created = await http.PostAsJsonAsync("/api/games", new CreateGameRequest("Alice"));
+        using var created = await http.PostAsJsonAsync("/api/games", new CreateGameRequest("Alice", Difficulty.Hard));
         var initial = await created.Content.ReadFromJsonAsync<GameStateDto>(ApiFactory.JsonOptions);
         Assert.NotNull(initial);
         using var channel = CreateChannel(mode);
@@ -43,6 +43,8 @@ public sealed class GrpcGameTests(ApiFactory factory) : IClassFixture<ApiFactory
         Assert.Equal(state.CreatedAtUtc, reply.CreatedAtUtc.ToDateTimeOffset());
         Assert.Equal(2, reply.Turns.Count);
         Assert.Equal(state.SkillPoints, reply.SkillPoints);
+        Assert.Equal((int)state.Difficulty, (int)reply.Difficulty);
+        Assert.Equal(DifficultyLevel.Hard, reply.Difficulty);
         foreach (var (expected, actual) in state.Turns.Zip(reply.Turns))
             AssertTurn(expected, actual);
         Assert.Equal((int)state.Status, (int)reply.Status);

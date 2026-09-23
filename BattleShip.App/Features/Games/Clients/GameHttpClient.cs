@@ -15,9 +15,10 @@ public sealed class GameHttpClient(HttpClient http)
         Converters = { new JsonStringEnumConverter() }
     };
 
-    public async Task<GameStateDto> CreateAsync(string playerName, CancellationToken cancellationToken)
+    public async Task<GameStateDto> CreateAsync(string playerName, Difficulty difficulty, CancellationToken cancellationToken)
     {
-        using var response = await http.PostAsJsonAsync("api/games", new CreateGameRequest(playerName), cancellationToken);
+        using var response = await http.PostAsJsonAsync("api/games",
+            new CreateGameRequest(playerName, difficulty), JsonOptions, cancellationToken);
         return await ReadAsync(response, cancellationToken);
     }
 

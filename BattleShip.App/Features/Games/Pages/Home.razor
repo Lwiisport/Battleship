@@ -25,6 +25,17 @@
             <input id="player-name" @bind="playerName" @bind:event="oninput" required maxlength="40"
                    autocomplete="nickname" placeholder="Votre nom" disabled="@busy" />
         </div>
+        <fieldset class="difficulty-options" disabled="@busy">
+            <legend class="sr-only">Difficulté de l’adversaire</legend>
+            @foreach (var option in Difficulties)
+            {
+                <label class="difficulty-option">
+                    <input type="radio" name="difficulty" checked="@(difficulty == option)"
+                           @onchange="() => difficulty = option" />
+                    <span><strong>@DifficultyLabel(option)</strong><small>@DifficultyHint(option)</small></span>
+                </label>
+            }
+        </fieldset>
         <button type="submit" class="primary" disabled="@(busy || string.IsNullOrWhiteSpace(playerName))">Nouvelle partie</button>
     </form>
     @if (game is not null)
@@ -62,7 +73,7 @@ else
 {
     <section class="status-bar" aria-live="polite" aria-atomic="true">
         <div>
-            <span class="eyebrow">@game.PlayerName · TOUR @game.TurnNumber</span>
+            <span class="eyebrow">@game.PlayerName · @DifficultyLabel(game.Difficulty).ToUpperInvariant() · TOUR @game.TurnNumber</span>
             <h2>@StatusText</h2>
         </div>
         <span class="status-pill @(game.Status == GameStatus.InProgress ? "" : "finished")">
@@ -117,6 +128,8 @@ else
     private readonly CancellationTokenSource lifetime = new();
     private GameStateDto? game;
     private string playerName = "";
+    private Difficulty difficulty = Difficulty.Normal;
+    private static readonly Difficulty[] Difficulties = Enum.GetValues<Difficulty>();
     private string? error;
     private string? loadedGameId;
     private string transport = "HTTP";
@@ -176,7 +189,7 @@ else
 
     private Task StartGame() => Run(async () =>
     {
-        game = await Http.CreateAsync(playerName.Trim(), lifetime.Token);
+        game = await Http.CreateAsync(playerName.Trim(), difficulty, lifetime.Token);
         playerName = game.PlayerName;
         needsSync = false;
         transport = "HTTP";
@@ -265,6 +278,18 @@ else
             ShotOutcome.Sunk => "coulé",
             _ => "inconnu"
         }}.";
+    internal static string DifficultyLabel(Difficulty level) => level switch
+    {
+        Difficulty.Easy => "Facile",
+        Difficulty.Hard => "Difficile",
+        _ => "Normal"
+    };
+    private static string DifficultyHint(Difficulty level) => level switch
+    {
+        Difficulty.Easy => "Tirs au hasard",
+        Difficulty.Hard => "Case la plus probable à chaque coup",
+        _ => "Poursuit ses touches, avec des erreurs"
+    };
     private static string ShipName(ShipKind kind) => kind switch
     {
         ShipKind.AircraftCarrier => "Porte-avions",

@@ -34,6 +34,13 @@ public sealed class GameGrpcService(GameStore store, IValidator<GetGameStatusReq
                 GameStatus.ComputerWon => GamePhase.ComputerWon,
                 GameStatus.Draw => GamePhase.Draw,
                 _ => throw new InvalidOperationException("État de partie inconnu.")
+            },
+            Difficulty = state.Difficulty switch
+            {
+                Difficulty.Easy => DifficultyLevel.Easy,
+                Difficulty.Normal => DifficultyLevel.Normal,
+                Difficulty.Hard => DifficultyLevel.Hard,
+                _ => throw new InvalidOperationException("Difficulté inconnue.")
             }
         };
         reply.PlayerGrid.AddRange(state.PlayerGrid.Select(MapCell));

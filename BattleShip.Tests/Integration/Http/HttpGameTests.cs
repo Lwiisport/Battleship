@@ -53,11 +53,35 @@ public sealed class HttpGameTests(ApiFactory factory) : IClassFixture<ApiFactory
     }
 
     [Theory]
+    [InlineData("Easy", Difficulty.Easy)]
+    [InlineData("Normal", Difficulty.Normal)]
+    [InlineData("Hard", Difficulty.Hard)]
+    public async Task Creation_accepts_and_echoes_the_difficulty(string value, Difficulty expected)
+    {
+        using var client = factory.CreateClient();
+        using var created = await client.PostAsync("/api/games", new StringContent(
+            $"{{\"playerName\":\"Alice\",\"difficulty\":\"{value}\"}}", Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        Assert.Equal(expected, (await ReadState(created)).Difficulty);
+    }
+
+    [Fact]
+    public async Task Creation_without_difficulty_keeps_the_easy_opponent()
+    {
+        using var client = factory.CreateClient();
+        using var created = await client.PostAsJsonAsync("/api/games", new CreateGameRequest("Alice"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        Assert.Equal(Difficulty.Easy, (await ReadState(created)).Difficulty);
+    }
+
+    [Theory]
     [InlineData("{}")]
     [InlineData("null")]
     [InlineData("{\"playerName\":null}")]
     [InlineData("{\"playerName\":\"   \"}")]
     [InlineData("{\"playerName\":\"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\"}")]
+    [InlineData("{\"playerName\":\"Alice\",\"difficulty\":\"Bof\"}")]
+    [InlineData("{\"playerName\":\"Alice\",\"difficulty\":7}")]
     [InlineData("{invalid")]
     public async Task Invalid_creation_returns_bad_request(string body)
     {

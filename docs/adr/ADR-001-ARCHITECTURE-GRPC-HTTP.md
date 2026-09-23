@@ -23,7 +23,7 @@ Un `Game` protège son état avec un verrou. La résolution du tir du joueur, l�
 
 ### 2. Utiliser HTTP pour les opérations métier courantes
 
-- `POST /api/games` crée une partie.
+- `POST /api/games` crée une partie, avec `difficulty` optionnel (`Easy` si absent).
 - `GET /api/games/{id}` lit l’état courant.
 - `POST /api/games/{id}/fire` applique un tir normal puis le tour complet.
 - `POST /api/games/{id}/powers` applique un pouvoir (mine, carré 2 × 2, ligne ou colonne) puis le tour complet.
@@ -34,7 +34,7 @@ Ce choix facilite le diagnostic avec `curl`, la documentation et les tests `WebA
 
 ### 3. Ajouter gRPC-Web pour une consultation typée
 
-`GameService.GetGameStatus` reçoit un UUID et retourne un `GameStatusReply` Protobuf typé. Il lit le même `GameStore` et appelle le même `Game.GetState()` que le GET HTTP. Le contrat a été étendu sans rupture : champs numérotés ajoutés (`skill_points`, `has_mine`, `action`, `target`, `player_shots`, `mine_detonation`, `skill_points_after`, `DRAW`) plutôt que modification des existants, ce que proto3 tolère pour les anciens clients.
+`GameService.GetGameStatus` reçoit un UUID et retourne un `GameStatusReply` Protobuf typé. Il lit le même `GameStore` et appelle le même `Game.GetState()` que le GET HTTP. Le contrat a été étendu sans rupture : champs numérotés ajoutés (`skill_points`, `has_mine`, `action`, `target`, `player_shots`, `mine_detonation`, `skill_points_after`, `DRAW`, `difficulty`) plutôt que modification des existants, ce que proto3 tolère pour les anciens clients.
 
 Le `.proto` unique est placé dans l’API et lié comme source au projet Blazor. Le code généré serveur inclut aussi le client utilisé par les tests ; Blazor génère son client sans référencer l’assembly API. Les messages Protobuf ne contaminent pas les modèles du domaine.
 
@@ -86,10 +86,10 @@ Le client ne réessaie pas automatiquement les mutations après une erreur rése
 
 ## Validation
 
-- 142 cas xUnit réussis dans la version livrée.
+- 169 cas xUnit réussis dans la version livrée.
 - Comparaison d’états HTTP/gRPC et tests `InvalidArgument` / `NotFound`.
 - CORS vérifié pour les origines permises et une origine refusée, avec prévol gRPC-Web.
-- Parcours Chrome exécuté en développement et sur publication, y compris réponse de tir perdue, resynchronisation et parcours dédié aux pouvoirs (points, prévisualisation survol/focus, mine, zones).
+- Parcours Chrome exécuté en développement et sur publication, y compris réponse de tir perdue, resynchronisation, parcours dédié aux pouvoirs (points, prévisualisation survol/focus, mine, zones) et choix de difficulté.
 - Publication de l’API et du client réussie ; aucune vulnérabilité connue détectée par l’audit NuGet effectué à la livraison.
 
 ## Traçabilité
@@ -101,5 +101,6 @@ Le client ne réessaie pas automatiquement les mutations après une erreur rése
 | `feat(app): add interactive Blazor game and transport clients` | `6a5cc1847ed249f0f7d9447fada79331a6422813` |
 | `docs: document setup architecture and implementation reviews` | `refs/snapshots/battleship/step-7` |
 | `feat(game): add skill powers and target previews` | commit ultérieur sur `main` |
+| `feat(game): add ai difficulty levels` | commit ultérieur sur `main` |
 
 Ces références sont des instantanés, pas des commits préexistants. Le journal donne les commandes pour créer l’historique correspondant puis retrouver les SHA réels.

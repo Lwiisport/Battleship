@@ -17,6 +17,10 @@ public static class GameEndpoints
         group.MapGet("/{id:guid}", Get).WithName("GetGame");
         group.MapPost("/{id:guid}/fire", Fire).WithName("Fire");
         group.MapPost("/{id:guid}/powers", UsePower).WithName("UsePower");
+        group.MapPost("/{id:guid}/fleet/place", PlaceShip).WithName("PlaceShip");
+        group.MapPost("/{id:guid}/fleet/remove", RemoveShip).WithName("RemoveShip");
+        group.MapPost("/{id:guid}/fleet/randomize", RandomizeFleet).WithName("RandomizeFleet");
+        group.MapPost("/{id:guid}/fleet/confirm", ConfirmFleet).WithName("ConfirmFleet");
     }
 
     private static async Task<Results<Created<GameStateDto>, ValidationProblem, ProblemHttpResult>> Create(
@@ -26,7 +30,7 @@ public static class GameEndpoints
         var validation = await validator.ValidateAsync(request, cancellationToken);
         if (!validation.IsValid)
             return TypedResults.ValidationProblem(validation.ToDictionary());
-        if (!store.TryCreate(request.PlayerName, request.Difficulty, out var game))
+        if (!store.TryCreate(request.PlayerName, request.Difficulty, out var game, request.ManualPlacement))
             return TypedResults.Problem(statusCode: StatusCodes.Status503ServiceUnavailable,
                 title: "Serveur occupé", detail: "Le nombre maximal de parties actives est atteint.");
         return TypedResults.Created($"/api/games/{game.Id}", game.GetState());
@@ -55,6 +59,30 @@ public static class GameEndpoints
         return validation.IsValid ? Execute(id, store, game => game.UsePower(request.Action, new Position(request.Row, request.Column)))
             : TypedResults.ValidationProblem(validation.ToDictionary());
     }
+
+    private static async Task<Results<Ok<GameStateDto>, ValidationProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> PlaceShip(
+        Guid id, PlaceShipRequest request, IValidator<PlaceShipRequest> validator, GameStore store,
+        CancellationToken cancellationToken)
+    {
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        return validation.IsValid ? Execute(id, store, game => game.PlaceShip(request.Ship, new Position(request.Row, request.Column), request.Vertical))
+            : TypedResults.ValidationProblem(validation.ToDictionary());
+    }
+
+    private static async Task<Results<Ok<GameStateDto>, ValidationProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> RemoveShip(
+        Guid id, RemoveShipRequest request, IValidator<RemoveShipRequest> validator, GameStore store,
+        CancellationToken cancellationToken)
+    {
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        return validation.IsValid ? Execute(id, store, game => game.RemoveShip(request.Ship))
+            : TypedResults.ValidationProblem(validation.ToDictionary());
+    }
+
+    private static Results<Ok<GameStateDto>, ValidationProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>> RandomizeFleet(
+        Guid id, GameStore store) => Execute(id, store, game => game.RandomizeFleet());
+
+    private static Results<Ok<GameStateDto>, ValidationProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>> ConfirmFleet(
+        Guid id, GameStore store) => Execute(id, store, game => game.StartBattle());
 
     private static Results<Ok<GameStateDto>, ValidationProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>> Execute(
         Guid id, GameStore store, Func<Game, GameStateDto> action)

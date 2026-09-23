@@ -108,6 +108,12 @@ Ces demandes ultérieures ont été commitées directement, sans instantanés in
 
 **Réalisation :** enum `Difficulty` (`Easy`/`Normal`/`Hard`) choisi à la création ; `ComputerOpponent` dans le moteur — facile conserve la file pré-mélangée historique, normal poursuit les cases touchées en privilégiant le prolongement des lignes avec ~20 % de tirs au hasard, difficile évalue tous les placements valides des navires restants avec forte pondération des cases touchées. L’IA n’observe que `ToGrid(false)` : jamais la position des navires. `GameStateDto.Difficulty` est un paramètre optionnel (archives antérieures → `Easy`, fidèle à leur IA réelle) ; `CreateGameRequest.Difficulty` absent → `Easy` pour compatibilité. Champ `difficulty` ajouté au proto, sélecteur à trois options dans le formulaire (présélection Normal), difficulté affichée dans l’en-tête et l’historique. **169 cas réussis** et parcours Chrome dédié.
 
+### Placement manuel de la flotte — `feat(game): add interactive ship placement phase`
+
+**Demande reformulée :** au début d’une partie, permettre de tourner et de placer ses bateaux.
+
+**Réalisation :** nouveau statut `GameStatus.PlacingShips` ; `CreateGameRequest.ManualPlacement` (absent → flotte automatique, compatibilité). Moteur : `Board.CreateEmpty`, `PlaceShip` (horizontal/vertical, dépassement et chevauchement refusés, repositionnement du même type), `RemoveShip`, `Randomize` (complète les navires restants), `StartBattle` (exige une flotte complète) ; tirs et pouvoirs refusés avant le combat (`GameNotStarted`). Endpoints POST `/fleet/place|remove|randomize|confirm` (POST pour rester dans la politique CORS GET/POST). `GameStateDto.ShipsToPlace` optionnel ; proto étendu (`GamePhase.PLACING`, `ShipKind`, `ShipSpecMessage`). Interface : composant `FleetPlacement` — liste des navires, rotation au bouton et à la touche R, prévisualisation de l’emprise au survol/focus sans révéler l’adversaire, reprise d’un navire posé, complétion aléatoire, bouton Commencer. Le test navigateur a détecté puis corrigé une réinitialisation de sélection lors de la reprise d’un navire posé (race de re-rendu). **207 cas réussis** et parcours Chrome dédié (22 contrôles).
+
 ## Créer les sept commits, dans l’ordre
 
 Ces commandes sont prévues pour **ce dépôt local encore sans commit**. Les références d’instantanés personnalisées ne sont pas transférées par un clone ordinaire. Après création des commits, l’historique normal suffit et peut être partagé comme tout dépôt Git.

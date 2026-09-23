@@ -33,6 +33,7 @@ public sealed class GameGrpcService(GameStore store, IValidator<GetGameStatusReq
                 GameStatus.PlayerWon => GamePhase.PlayerWon,
                 GameStatus.ComputerWon => GamePhase.ComputerWon,
                 GameStatus.Draw => GamePhase.Draw,
+                GameStatus.PlacingShips => GamePhase.Placing,
                 _ => throw new InvalidOperationException("État de partie inconnu.")
             },
             Difficulty = state.Difficulty switch
@@ -45,6 +46,20 @@ public sealed class GameGrpcService(GameStore store, IValidator<GetGameStatusReq
         };
         reply.PlayerGrid.AddRange(state.PlayerGrid.Select(MapCell));
         reply.OpponentGrid.AddRange(state.OpponentGrid.Select(MapCell));
+        if (state.ShipsToPlace is { } remaining)
+            reply.ShipsToPlace.AddRange(remaining.Select(spec => new ShipSpecMessage
+            {
+                Size = spec.Size,
+                Kind = spec.Kind switch
+                {
+                    global::BattleShip.Models.Enums.ShipKind.AircraftCarrier => global::BattleShip.Grpc.ShipKind.AircraftCarrier,
+                    global::BattleShip.Models.Enums.ShipKind.Cruiser => global::BattleShip.Grpc.ShipKind.Cruiser,
+                    global::BattleShip.Models.Enums.ShipKind.Destroyer => global::BattleShip.Grpc.ShipKind.Destroyer,
+                    global::BattleShip.Models.Enums.ShipKind.Submarine => global::BattleShip.Grpc.ShipKind.Submarine,
+                    global::BattleShip.Models.Enums.ShipKind.PatrolBoat => global::BattleShip.Grpc.ShipKind.PatrolBoat,
+                    _ => throw new InvalidOperationException("Navire inconnu.")
+                }
+            }));
         if (state.LastPlayerShot is { } playerShot)
             reply.LastPlayerShot = MapShot(playerShot);
         if (state.LastComputerShot is { } computerShot)

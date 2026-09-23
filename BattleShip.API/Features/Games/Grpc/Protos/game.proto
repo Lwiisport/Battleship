@@ -18,6 +18,15 @@ enum GamePhase {
   PLAYER_WON = 1;
   COMPUTER_WON = 2;
   DRAW = 3;
+  PLACING = 4;
+}
+
+enum ShipKind {
+  SHIP_KIND_AIRCRAFT_CARRIER = 0;
+  SHIP_KIND_CRUISER = 1;
+  SHIP_KIND_DESTROYER = 2;
+  SHIP_KIND_SUBMARINE = 3;
+  SHIP_KIND_PATROL_BOAT = 4;
 }
 
 enum CellKind {
@@ -52,6 +61,11 @@ enum DifficultyLevel {
 message PositionMessage {
   int32 row = 1;
   int32 column = 2;
+}
+
+message ShipSpecMessage {
+  ShipKind kind = 1;
+  int32 size = 2;
 }
 
 message MineDetonationMessage {
@@ -96,4 +110,5 @@ message GameStatusReply {
   repeated TurnMessage turns = 10;
   int32 skill_points = 11;
   DifficultyLevel difficulty = 12;
+  repeated ShipSpecMessage ships_to_place = 13;
 }

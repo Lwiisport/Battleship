@@ -221,6 +221,35 @@ public sealed class GameHistoryStoreTests
         Assert.NotNull(store.Warning);
     }
 
+    [Fact]
+    public async Task Games_waiting_for_placement_survive_archiving()
+    {
+        var game = new Game("Alice", Difficulty.Normal, new Random(42), manualPlacement: true);
+        game.PlaceShip(ShipKind.Cruiser, new Position(0, 0), vertical: false);
+        var state = game.GetState();
+        var storage = new FakeStorage();
+        await new GameHistoryStore(storage).RememberAsync(state);
+        var reopened = new GameHistoryStore(storage);
+        await reopened.LoadAsync();
+        Assert.Null(reopened.Warning);
+        var restored = Assert.Single(reopened.Entries).State;
+        Assert.Equal(GameStatus.PlacingShips, restored.Status);
+        Assert.Equal(JsonSerializer.Serialize(state), JsonSerializer.Serialize(restored));
+    }
+
+    [Fact]
+    public async Task Archives_without_placement_fields_remain_readable()
+    {
+        var state = new Game("Alice", new Random(42)).GetState();
+        var json = JsonSerializer.SerializeToNode(new[] { new GameHistoryEntry(state, DateTimeOffset.UtcNow) })!;
+        json[0]!["State"]!.AsObject().Remove("ShipsToPlace");
+        var storage = new FakeStorage { Json = json.ToJsonString() };
+        var reopened = new GameHistoryStore(storage);
+        await reopened.LoadAsync();
+        Assert.Null(reopened.Warning);
+        Assert.Null(Assert.Single(reopened.Entries).State.ShipsToPlace);
+    }
+
     private sealed class FakeStorage : IJSRuntime
     {
         public string? Json { get; set; }

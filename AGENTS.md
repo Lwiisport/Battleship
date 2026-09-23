@@ -27,7 +27,7 @@
 
 ## Vérifications complémentaires
 
-- Suite actuelle : 169 cas xUnit, incluant les transports HTTP/gRPC-Web, les pouvoirs, les difficultés et l’archive locale ; aucun test navigateur n’est inclus dans ce nombre.
+- Suite actuelle : 207 cas xUnit, incluant les transports HTTP/gRPC-Web, les pouvoirs, les difficultés, le placement manuel et l’archive locale ; aucun test navigateur n’est inclus dans ce nombre.
 - Audit : `dotnet list BattleShip.slnx package --vulnerable --include-transitive`.
 - Publication : `dotnet publish BattleShip.API/BattleShip.API.csproj --configuration Release` puis `dotnet publish BattleShip.App/BattleShip.App.csproj --configuration Release`.
 - Le workload `wasm-tools` est optionnel ; l’application publiée a été vérifiée dans Chrome sans celui-ci.
@@ -45,6 +45,7 @@
 - La mine se pose sur la grille du joueur (`CellDto.HasMine`), ne protège pas la case : le tir adverse est appliqué puis renvoyé sur la même coordonnée ; un double naufrage donne `GameStatus.Draw`.
 - Le carré 2 × 2 utilise la case choisie comme coin supérieur gauche ; les zones ne touchent que les cases non visées. La géométrie est définie dans `PowerRules.Targets`, partagée par le moteur et la prévisualisation Blazor.
 - Endpoint des pouvoirs : `POST /api/games/{id}/powers` avec `UsePowerRequest` ; le contrat gRPC étend `TurnMessage`/`GameStatusReply` par champs ajoutés (compatibilité proto3).
+- Placement manuel : `CreateGameRequest.ManualPlacement` (absent → flotte automatique, compatibilité) ; statut `GameStatus.PlacingShips`, navires restants dans `GameStateDto.ShipsToPlace`. Endpoints POST `/api/games/{id}/fleet/place|remove|randomize|confirm` — POST uniquement car la politique CORS n’autorise que GET/POST. Re-poser un type déjà posé le repositionne (l’ancienne position survit à un échec de validation) ; `StartBattle` exige les 5 navires ; tirs/pouvoirs refusés avant le combat (`GameNotStarted`). L’interface place toujours en manuel ; `FleetPlacement` gère rotation (bouton + touche R), prévisualisation d’emprise et reprise d’un navire posé.
 - Difficulté (`Difficulty` : `Easy`/`Normal`/`Hard`) choisie à la création via `CreateGameRequest` ; `ComputerOpponent` ne reçoit que la grille observée (`ToGrid(false)`), jamais `Board` ni les positions réelles. Facile = file pré-mélangée (conserver la séquence du constructeur : les tests reproduisent la consommation du `Random`), normal = poursuite des touches avec ~20 % d’erreurs, difficile = densité de probabilité des placements restants. Absent du JSON : `Easy` (compatibilité) ; l’interface présélectionne `Normal`.
 
 ## Organisation des sources

@@ -29,10 +29,11 @@
             <legend class="sr-only">Difficulté de l’adversaire</legend>
             @foreach (var option in Difficulties)
             {
-                <label class="difficulty-option">
+                <label class="difficulty-option" title="@DifficultyHint(option)">
                     <input type="radio" name="difficulty" checked="@(difficulty == option)"
                            @onchange="() => difficulty = option" />
-                    <span><strong>@DifficultyLabel(option)</strong><small>@DifficultyHint(option)</small></span>
+                    @DifficultyLabel(option)
+                    <small class="sr-only">@DifficultyHint(option)</small>
                 </label>
             }
         </fieldset>
@@ -65,7 +66,7 @@
     <section class="panel welcome" aria-live="polite">
         <span class="eyebrow">PRÉPAREZ VOTRE FLOTTE</span>
         <h2>@(busy ? "Déploiement en cours…" : "Prenez le commandement")</h2>
-        <p>Entrez votre nom puis lancez une partie. Les navires sont placés automatiquement, sans chevauchement.</p>
+        <p>Entrez votre nom puis lancez une partie. Positionnez vos cinq navires — vous pouvez les pivoter — ou laissez le hasard les répartir.</p>
         <p>Un clic sur la grille adverse déclenche votre tir puis la réponse de l’ordinateur.</p>
     </section>
 }
@@ -77,9 +78,21 @@ else
             <h2>@StatusText</h2>
         </div>
         <span class="status-pill @(game.Status == GameStatus.InProgress ? "" : "finished")">
-            @(busy ? "Synchronisation…" : game.Status == GameStatus.InProgress ? "EN COURS" : "TERMINÉE")
+            @(busy ? "Synchronisation…" : game.Status switch
+            {
+                GameStatus.InProgress => "EN COURS",
+                GameStatus.PlacingShips => "PLACEMENT",
+                _ => "TERMINÉE"
+            })
         </span>
     </section>
+    @if (game.Status == GameStatus.PlacingShips)
+    {
+        <FleetPlacement Cells="game.PlayerGrid" ShipsToPlace="game.ShipsToPlace ?? []" Disabled="@(!CanPlace)"
+                        OnPlace="PlaceShip" OnRemove="RemoveShip" OnRandomize="RandomizeFleet" OnConfirm="ConfirmFleet" />
+    }
+    else
+    {
     <PowerControls SkillPoints="game.SkillPoints" SelectedAction="selectedAction" Disabled="@(!CanAct)" OnSelect="SelectAction" />
     <div class="boards" aria-busy="@(busy ? "true" : "false")">
         <section class="panel board-panel">
@@ -108,6 +121,7 @@ else
         <span class="sync-label" role="status">Dernière synchronisation : @transport</span>
     </div>
     <TurnHistory Turns="game.Turns" />
+    }
 }
 
 <GameHistoryPanel Entries="History.Entries" ActiveGameId="game?.Id" Disabled="busy" OnResume="ResumeGame" />
@@ -137,6 +151,7 @@ else
     private bool needsSync;
     private GameAction selectedAction;
     private bool CanAct => !busy && !needsSync && game?.Status == GameStatus.InProgress;
+    private bool CanPlace => !busy && !needsSync && game?.Status == GameStatus.PlacingShips;
     private bool CanUseSelectedAction => CanAct && game!.SkillPoints >= PowerRules.Cost(selectedAction);
     private IReadOnlyList<Position> LastPlayerTargets => game?.Turns.LastOrDefault() is not { } turn ? []
         : turn.GetPlayerShots().Select(shot => shot.Position)
@@ -157,6 +172,9 @@ else
         GameStatus.PlayerWon => "Victoire ! La flotte adverse est coulée.",
         GameStatus.ComputerWon => "Défaite. Votre flotte a été coulée.",
         GameStatus.Draw => "Match nul : les deux flottes ont été coulées.",
+        GameStatus.PlacingShips when busy => "Transmission en cours…",
+        GameStatus.PlacingShips when needsSync => "Actualisation nécessaire",
+        GameStatus.PlacingShips => "Posez vos cinq navires, puis lancez le combat.",
         _ when busy => "Transmission en cours…",
         _ when needsSync => "Actualisation nécessaire",
         _ when selectedAction == GameAction.Mine => "Votre tour : placez une mine sur votre grille.",
@@ -189,7 +207,7 @@ else
 
     private Task StartGame() => Run(async () =>
     {
-        game = await Http.CreateAsync(playerName.Trim(), difficulty, lifetime.Token);
+        game = await Http.CreateAsync(playerName.Trim(), difficulty, manualPlacement: true, lifetime.Token);
         playerName = game.PlayerName;
         needsSync = false;
         transport = "HTTP";
@@ -218,6 +236,30 @@ else
         {
             game = action == GameAction.NormalShot ? await Http.FireAsync(id, position, lifetime.Token)
                 : await Http.UsePowerAsync(id, action, position, lifetime.Token);
+            transport = "HTTP";
+        }, changesGame: true);
+    }
+
+    private Task PlaceShip((ShipKind Ship, Position Start, bool Vertical) args) => MutatePlacement(
+        id => Http.PlaceShipAsync(id, args.Ship, args.Start, args.Vertical, lifetime.Token));
+
+    private Task RemoveShip(ShipKind kind) => MutatePlacement(
+        id => Http.RemoveShipAsync(id, kind, lifetime.Token));
+
+    private Task RandomizeFleet() => MutatePlacement(
+        id => Http.RandomizeFleetAsync(id, lifetime.Token));
+
+    private Task ConfirmFleet() => MutatePlacement(
+        id => Http.ConfirmFleetAsync(id, lifetime.Token));
+
+    private Task MutatePlacement(Func<Guid, Task<GameStateDto>> action)
+    {
+        if (game is null || needsSync || game.Status != GameStatus.PlacingShips)
+            return Task.CompletedTask;
+        var id = game.Id;
+        return Run(async () =>
+        {
+            game = await action(id);
             transport = "HTTP";
         }, changesGame: true);
     }

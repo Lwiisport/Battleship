@@ -26,3 +26,25 @@ public sealed class FireRequestValidator : AbstractValidator<FireRequest>
             .WithMessage("La colonne doit être comprise entre 0 et 9.");
     }
 }
+
+public sealed class PlaceShipRequestValidator : AbstractValidator<PlaceShipRequest>
+{
+    public PlaceShipRequestValidator()
+    {
+        RuleFor(request => request.Ship).IsInEnum()
+            .WithMessage("Choisissez un navire de la flotte.");
+        RuleFor(request => request.Row).InclusiveBetween(0, Board.Size - 1)
+            .WithMessage("La ligne doit être comprise entre 0 et 9.");
+        RuleFor(request => request.Column).InclusiveBetween(0, Board.Size - 1)
+            .WithMessage("La colonne doit être comprise entre 0 et 9.");
+    }
+}
+
+public sealed class RemoveShipRequestValidator : AbstractValidator<RemoveShipRequest>
+{
+    public RemoveShipRequestValidator()
+    {
+        RuleFor(request => request.Ship).IsInEnum()
+            .WithMessage("Choisissez un navire de la flotte.");
+    }
+}

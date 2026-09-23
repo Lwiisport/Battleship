@@ -37,7 +37,7 @@ dotnet run --project BattleShip.App --configuration Release --no-build --launch-
 - API : <http://localhost:5247/api/games>
 - OpenAPI, en environnement Development : <http://localhost:5247/openapi/v1.json>
 
-Saisir un nom, choisir la difficulté de l’adversaire, créer une partie et cliquer sur une case adverse. L’ordinateur répond automatiquement. Chaque tir normal accepté rapporte un point de compétence, dépensable en pouvoirs (mine, carré 2 × 2, ligne ou colonne entière). Les boutons **Actualiser HTTP** et **Actualiser gRPC-Web** permettent de lire le même état par les deux transports.
+Saisir un nom, choisir la difficulté de l’adversaire et créer une partie : la phase de **placement** s’ouvre. Choisissez chaque navire, pivotez-le (bouton **Pivoter** ou touche **R**) et cliquez sur sa case de proue ; le survol prévisualise l’emprise. Un navire posé peut être repris depuis la liste, et **Placer le reste au hasard** complète la flotte. **Commencer le combat** verrouille la flotte et ouvre les tirs : un clic sur une case adverse déclenche votre tir puis la réponse de l’ordinateur. Chaque tir normal accepté rapporte un point de compétence, dépensable en pouvoirs (mine, carré 2 × 2, ligne ou colonne entière). Les boutons **Actualiser HTTP** et **Actualiser gRPC-Web** permettent de lire le même état par les deux transports.
 
 Le lien `/?game=<id>` conserve l’identifiant courant : recharger la page reprend la partie tant qu’elle existe. Ce lien donne accès à la partie ; ne pas le partager si elle doit rester privée.
 
@@ -80,7 +80,8 @@ L’adversaire ne connaît que ce qu’un joueur réel verrait : la grille obser
 
 - Deux grilles de 10 × 10, coordonnées API indexées de **0 à 9** ; affichage de A1 à J10.
 - Flotte standard : porte-avions 5, croiseur 4, contre-torpilleur 3, sous-marin 3, torpilleur 2.
-- Placement rectiligne, contigu, aléatoire, sans chevauchement ni dépassement. Les navires peuvent se toucher : aucune interdiction de contact n’est imposée.
+- Placement rectiligne, contigu, horizontal ou vertical, sans chevauchement ni dépassement. Les navires peuvent se toucher : aucune interdiction de contact n’est imposée.
+- L’interface démarre en phase `PlacingShips` : le joueur pose ses navires un à un, peut les pivoter et les reprendre, compléter le reste au hasard, puis confirme pour passer en `InProgress`. Tirer ou utiliser un pouvoir pendant le placement est refusé (`GameNotStarted`). L’API reste compatible : `CreateGameRequest.ManualPlacement` absent place la flotte automatiquement et démarre directement en `InProgress`.
 - Les navires du joueur sont visibles. Toute case adverse non visée reste `Unknown`, qu’elle contienne de l’eau ou un navire, même en fin de partie.
 - Un tir révèle `Miss`, `Hit` ou `Sunk`. Lorsqu’un navire est coulé, toutes ses cases déjà touchées deviennent `Sunk`.
 - Un tir hors grille, répété, ou effectué après la fin de partie est refusé sans mutation.
@@ -133,7 +134,7 @@ BattleShip.App/
 ├── Features/
 │   ├── Games/
 │   │   ├── Pages/             Page de jeu Home
-│   │   ├── Components/        Grille interactive et commandes de pouvoirs
+│   │   ├── Components/        Grille interactive, pouvoirs et placement de la flotte
 │   │   └── Clients/           Clients HTTP et gRPC-Web
 │   └── History/
 │       ├── Components/        Liste des parties et journal des tirs
@@ -146,7 +147,7 @@ BattleShip.App/
 BattleShip.Tests/
 ├── Infrastructure/            Fabrique de serveur et source client liée
 ├── Unit/
-│   ├── Engine/                Placement, masquage, tours, pouvoirs, difficultés et concurrence
+│   ├── Engine/                Placement aléatoire et manuel, masquage, tours, pouvoirs, difficultés et concurrence
 │   ├── Storage/               Capacité et expiration du stockage API
 │   ├── Validation/            Validators HTTP et gRPC sans serveur
 │   └── History/               Archivage local via un faux IJSRuntime
@@ -172,6 +173,10 @@ dotnet test BattleShip.Tests/BattleShip.Tests.csproj --configuration Release --n
 | GET | `/api/games/{id}` | `200 OK`, `GameStateDto` | 404 inconnue ou expirée |
 | POST | `/api/games/{id}/fire` | `200 OK`, état après le tour complet | 400 validation, 404 inconnue, 409 tir répété ou partie terminée |
 | POST | `/api/games/{id}/powers` | `200 OK`, état après le tour complet | 400 validation, 404 inconnue, 409 pouvoir invalide, trop coûteux ou sans nouvelle cible |
+| POST | `/api/games/{id}/fleet/place` | `200 OK`, état après pose (`PlaceShipRequest` : `ship`, `row`, `column`, `vertical`) | 400 validation, 404 inconnue, 409 hors phase de placement, dépassement ou chevauchement |
+| POST | `/api/games/{id}/fleet/remove` | `200 OK`, état après retrait (`RemoveShipRequest` : `ship`) | 400 validation, 404 inconnue, 409 navire non posé ou flotte verrouillée |
+| POST | `/api/games/{id}/fleet/randomize` | `200 OK`, complète les navires restants au hasard | 404 inconnue, 409 flotte verrouillée |
+| POST | `/api/games/{id}/fleet/confirm` | `200 OK`, passe en `InProgress` | 404 inconnue, 409 flotte incomplète ou verrouillée |
 
 Une route avec un identifiant non convertible en UUID ne correspond pas à la contrainte `{id:guid}` et renvoie 404. Les erreurs sont structurées avec Problem Details ; les erreurs FluentValidation contiennent un dictionnaire `errors`. Un corps JSON absent, mal formé ou privé d’un paramètre obligatoire renvoie 400, jamais un tir implicite en `(0, 0)`.
 
@@ -196,7 +201,7 @@ curl -i "http://localhost:5247/api/games/$GAME_ID/powers" \
   -d '{"action":"SquareStrike","row":0,"column":0}'
 ```
 
-`GameStateDto` contient `id`, `playerName`, `status`, `difficulty`, `turnNumber`, `createdAtUtc`, `skillPoints`, deux tableaux de 100 cellules, les derniers tirs et `turns`. Chaque `TurnDto` contient `number`, `action`, `target`, `playerShot`, `playerShots` (tirs de zone éventuels), `computerShot` (nul si le joueur vient de gagner), `mineDetonation` et `skillPointsAfter`. Les actions refusées ne sont pas ajoutées à ce journal. Une cellule contient `row`, `column`, `state` et `hasMine` (visible uniquement sur la grille du joueur). La réponse n’expose ni objet `Board`, ni liste de positions des navires adverses. Les enums JSON sont des chaînes.
+`GameStateDto` contient `id`, `playerName`, `status` (dont `PlacingShips` pendant le placement), `difficulty`, `turnNumber`, `createdAtUtc`, `skillPoints`, `shipsToPlace` (navires restant à poser, vide hors placement), deux tableaux de 100 cellules, les derniers tirs et `turns`. Chaque `TurnDto` contient `number`, `action`, `target`, `playerShot`, `playerShots` (tirs de zone éventuels), `computerShot` (nul si le joueur vient de gagner), `mineDetonation` et `skillPointsAfter`. Les actions refusées ne sont pas ajoutées à ce journal. Une cellule contient `row`, `column`, `state` et `hasMine` (visible uniquement sur la grille du joueur). La réponse n’expose ni objet `Board`, ni liste de positions des navires adverses. Les enums JSON sont des chaînes.
 
 Un pouvoir se déclenche avec `UsePowerRequest { action, row, column }`, où `action` vaut `Mine`, `SquareStrike`, `RowStrike` ou `ColumnStrike` :
 
@@ -205,7 +210,7 @@ Un pouvoir se déclenche avec `UsePowerRequest { action, row, column }`, où `ac
 - Service : `battleship.v1.GameService`.
 - Méthode unaire : `GetGameStatus`.
 - Requête : `GetGameStatusRequest { game_id }`.
-- Réponse : `GameStatusReply`, avec grilles typées, phase (dont `DRAW`), difficulté (`DifficultyLevel`), numéro du tour, points de compétence, derniers tirs, date UTC de création (`Timestamp`) et historique complet (`TurnMessage` : action, cible, tirs de zone, détonation de mine et points après le tour).
+- Réponse : `GameStatusReply`, avec grilles typées, phase (dont `PLACING` et `DRAW`), difficulté (`DifficultyLevel`), numéro du tour, points de compétence, derniers tirs, date UTC de création (`Timestamp`), historique complet (`TurnMessage` : action, cible, tirs de zone, détonation de mine et points après le tour) et navires restant à poser (`ShipSpecMessage`).
 - UUID invalide ou vide : `RpcException` / `InvalidArgument`.
 - Partie inconnue ou expirée : `RpcException` / `NotFound`.
 
@@ -242,7 +247,7 @@ dotnet test BattleShip.Tests/BattleShip.Tests.csproj --configuration Release --n
 dotnet list BattleShip.slnx package --vulnerable --include-transitive
 ```
 
-À la livraison : **169 cas xUnit réussis**, aucun test ignoré, compilation sans avertissement ni erreur et aucune vulnérabilité connue signalée par les sources NuGet consultées. Ce dernier résultat dépend de la date et du catalogue d’avis disponibles, et n’est pas une garantie d’absence de vulnérabilité.
+À la livraison : **207 cas xUnit réussis**, aucun test ignoré, compilation sans avertissement ni erreur et aucune vulnérabilité connue signalée par les sources NuGet consultées. Ce dernier résultat dépend de la date et du catalogue d’avis disponibles, et n’est pas une garantie d’absence de vulnérabilité.
 
 Couverture fonctionnelle :
 
@@ -254,11 +259,12 @@ Couverture fonctionnelle :
 - Équivalence des réponses HTTP et gRPC-Web, modes binaire et texte, dates et historique complet des tours.
 - Pouvoirs : gains et plafond de points, coûts, refus sans mutation, zones 2 × 2 et ligne/colonne, pose et détonation de mine, tir renvoyé, match nul et validator `UsePowerRequest`.
 - Difficultés : file mélangée en facile, poursuite des touches avec erreurs en normal, densité de probabilité en difficile (voisinage des touches, prolongement des lignes, navires coulés retirés), comparaison de vitesse de destruction et validation de la valeur reçue.
-- Archivage local : restauration, déduplication, protection contre les instantanés plus anciens, borne de 50 parties, archives invalides ou avec points impossibles, compatibilité des archives antérieures aux pouvoirs et à la difficulté, et reprise après quota dépassé.
+- Placement manuel : phase `PlacingShips`, pose horizontale et verticale, refus de dépassement et de chevauchement sans mutation, repositionnement d’un navire posé, retrait, complétion aléatoire des navires restants, verrouillage de la flotte au combat, tirs et pouvoirs refusés avant le début (`GameNotStarted`) et validators des requêtes de flotte.
+- Archivage local : restauration, déduplication, protection contre les instantanés plus anciens, borne de 50 parties, archives invalides ou avec points impossibles, compatibilité des archives antérieures aux pouvoirs, à la difficulté et au placement, et reprise après quota dépassé.
 
 Le service client `Features/History/Services/GameHistoryStore.cs` est lié comme source sous `Infrastructure/Client` dans les tests pour vérifier son implémentation réelle sans charger l’application WebAssembly ni dupliquer les types Protobuf. Un faux `IJSRuntime` simule le stockage ; aucune dépendance NuGet supplémentaire n’est nécessaire.
 
-Un parcours Chrome automatisé a également été exécuté sur le serveur de développement puis sur les fichiers publiés : création, tir, actualisations par les deux transports, rechargement, affichage à 375 px, réponse de tir perdue, resynchronisation, fin de partie et redémarrage. Un second parcours couvre les pouvoirs : jauge de points, activation des boutons, prévisualisation des zones au survol et au focus clavier sans révéler les navires, carré 2 × 2, pose de mine, ligne entière et conservation de l’historique après rechargement. Un troisième vérifie le choix de difficulté : trois options, présélection Normal, libellé dans l’en-tête et création en difficile. Ces contrôles navigateur sont externes au dépôt et ne sont pas inclus dans les tests xUnit.
+Un parcours Chrome automatisé a également été exécuté sur le serveur de développement puis sur les fichiers publiés : création, tir, actualisations par les deux transports, rechargement, affichage à 375 px, réponse de tir perdue, resynchronisation, fin de partie et redémarrage. Un second parcours couvre les pouvoirs : jauge de points, activation des boutons, prévisualisation des zones au survol et au focus clavier sans révéler les navires, carré 2 × 2, pose de mine, ligne entière et conservation de l’historique après rechargement. Un troisième vérifie le choix de difficulté : trois options, présélection Normal, libellé dans l’en-tête et création en difficile. Un quatrième couvre le placement : liste des navires, prévisualisation horizontale et verticale au survol, dépassement signalé, pose, reprise d’un navire posé, rotation au bouton et à la touche R, complétion aléatoire, confirmation puis premier tir et reprise après rechargement. Ces contrôles navigateur sont externes au dépôt et ne sont pas inclus dans les tests xUnit.
 
 Le parcours de l’historique a également été vérifié dans Chrome, en développement et sur publication : plusieurs parties, consultation sans remplacer la partie active, reprise, rechargement, API inaccessible, réponse 404 simulant une partie expirée, récupération d’un tir accepté dont la réponse a été perdue, stockage plein puis rétabli et contenu local corrompu. Aucun échec navigateur non géré n’a été observé.
 

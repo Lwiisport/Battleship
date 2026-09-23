@@ -45,6 +45,16 @@ public sealed class GameStoreTests
         Assert.Equal(difficulty, game!.GetState().Difficulty);
     }
 
+    [Fact]
+    public void Store_can_create_a_game_waiting_for_manual_placement()
+    {
+        var store = new GameStore(Options.Create(new GameStoreOptions()), new TestClock());
+        Assert.True(store.TryCreate("Alice", Difficulty.Normal, out var game, manualPlacement: true));
+        var state = game!.GetState();
+        Assert.Equal(GameStatus.PlacingShips, state.Status);
+        Assert.Equal(5, state.ShipsToPlace!.Length);
+    }
+
     private sealed class TestClock : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

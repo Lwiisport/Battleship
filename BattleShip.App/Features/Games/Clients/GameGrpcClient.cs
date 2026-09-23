@@ -17,6 +17,7 @@ public sealed class GameGrpcClient(GameService.GameServiceClient client)
             GamePhase.PlayerWon => GameStatus.PlayerWon,
             GamePhase.ComputerWon => GameStatus.ComputerWon,
             GamePhase.Draw => GameStatus.Draw,
+            GamePhase.Placing => GameStatus.PlacingShips,
             _ => throw new InvalidOperationException("État de partie inconnu.")
         }, reply.TurnNumber, reply.PlayerGrid.Select(MapCell).ToArray(), reply.OpponentGrid.Select(MapCell).ToArray(),
             MapShot(reply.LastPlayerShot), MapShot(reply.LastComputerShot), reply.CreatedAtUtc.ToDateTimeOffset(),
@@ -26,7 +27,7 @@ public sealed class GameGrpcClient(GameService.GameServiceClient client)
                 DifficultyLevel.Normal => Difficulty.Normal,
                 DifficultyLevel.Hard => Difficulty.Hard,
                 _ => throw new InvalidOperationException("Difficulté inconnue.")
-            });
+            }, reply.ShipsToPlace.Select(spec => new ShipSpecification(MapShipKind(spec.Kind), spec.Size)).ToArray());
     }
 
     private static TurnDto MapTurn(TurnMessage turn) => new(turn.Number, MapShot(turn.PlayerShot), MapShot(turn.ComputerShot),
@@ -44,6 +45,16 @@ public sealed class GameGrpcClient(GameService.GameServiceClient client)
         turn.MineDetonation is null ? null : new MineDetonationDto(
             new Position(turn.MineDetonation.Position.Row, turn.MineDetonation.Position.Column),
             MapShot(turn.MineDetonation.ReflectedShot)), turn.SkillPointsAfter);
+
+    private static global::BattleShip.Models.Enums.ShipKind MapShipKind(global::BattleShip.Grpc.ShipKind kind) => kind switch
+    {
+        global::BattleShip.Grpc.ShipKind.AircraftCarrier => global::BattleShip.Models.Enums.ShipKind.AircraftCarrier,
+        global::BattleShip.Grpc.ShipKind.Cruiser => global::BattleShip.Models.Enums.ShipKind.Cruiser,
+        global::BattleShip.Grpc.ShipKind.Destroyer => global::BattleShip.Models.Enums.ShipKind.Destroyer,
+        global::BattleShip.Grpc.ShipKind.Submarine => global::BattleShip.Models.Enums.ShipKind.Submarine,
+        global::BattleShip.Grpc.ShipKind.PatrolBoat => global::BattleShip.Models.Enums.ShipKind.PatrolBoat,
+        _ => throw new InvalidOperationException("Navire inconnu.")
+    };
 
     private static CellDto MapCell(CellMessage cell) => new(cell.Row, cell.Column, cell.State switch
     {

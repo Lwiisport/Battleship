@@ -1,6 +1,6 @@
 # Revues de code argumentées
 
-Ces cinq revues évaluent le code et des alternatives de conception. Elles ne constituent ni une approbation humaine, ni une certification de sécurité. Les décisions sont reliées aux tests et aux instantanés réellement enregistrés.
+Ces six revues évaluent le code et des alternatives de conception. Elles ne constituent ni une approbation humaine, ni une certification de sécurité. Les décisions sont reliées aux tests et aux instantanés réellement enregistrés.
 
 Les messages de commit cités sont les sujets prévus dans [PROMPTS.md](PROMPTS.md). À la rédaction, les commits n’ont pas encore été exécutés ; les hashes ci-dessous désignent des **arbres Git**, jamais des commits inventés. Après création de l’historique, `git log --fixed-strings --grep='<sujet>'` retrouve le commit correspondant.
 
@@ -177,6 +177,37 @@ Référence : `feat(game): add ai difficulty levels`, commit créé après ces r
 
 Deux navires coulés accolés sont indiscernables dans la grille observée : une ligne de `Sunk` de longueur 5 peut être un porte-avions ou un sous-marin collé à un torpilleur. Le calcul retire alors les plus grandes tailles possibles — approximation assumée, rare et sans fuite d’information. Le mode difficile reste plus lent à raisonner qu’un humain sur les fins de partie à deux cases, car il ne privilégie pas la parité du plus petit navire restant.
 
+## Revue 6 — Accepté : une phase de placement explicite dans `GameStatus`
+
+### Code examiné
+
+- `BattleShip.Models/Engine/Game.cs` : `PlacingShips`, `PlaceShip`, `RemoveShip`, `RandomizeFleet`, `StartBattle`, `RequirePlacing`.
+- `BattleShip.Models/Engine/Board.cs` : `CreateEmpty`, `PlaceShip`, `ShipFootprint`, `Randomize`.
+- `BattleShip.API/Features/Games/Http/GameEndpoints.cs` : endpoints `/fleet/*`.
+
+### Alternatives considérées
+
+1. Garder `InProgress` et ajouter un booléen `fleetLocked` : moins de types, mais deux états orthogonaux mélangés — une partie « en cours mais sans flotte » serait possible à exprimer, et chaque action devrait tester deux conditions.
+2. Statut dédié `PlacingShips` dans l’enum existante : un seul champ dit dans quelle phase est la partie ; `Play` rejette uniformément tout ce qui n’est pas `InProgress`.
+3. Remplacer un navire posé par rejet sec : plus simple à coder, mais oblige le joueur à retirer explicitement avant de reposer.
+
+### Décision
+
+**Accepté : options 2 et 3 adaptées.** Le statut est explicite : les mutations de flotte exigent `PlacingShips`, les tirs exigent `InProgress`, chaque mauvaise phase produit un `GameError` distinct (`FleetAlreadyLocked`, `GameNotStarted`, `FleetIncomplete`). Re-poser un type déjà posé le repositionne après validation de la nouvelle emprise : en cas d’échec, l’ancienne position est conservée — jamais de navire perdu par un clic malheureux. `ManualPlacement` reste optionnel dans `CreateGameRequest` : les clients existants créent une partie immédiatement jouable, comme avant.
+
+### Preuves
+
+- `PlacementTests` : phase initiale, refus sans mutation, repositionnement, échec de remplacement conservateur, verrouillage au combat, `GameNotStarted`.
+- `HttpFleetTests` : parcours complet HTTP, compatibilité sans le champ, erreurs 400/404/409.
+- `GrpcGameTests.Grpc_web_exposes_the_placement_phase_and_remaining_ships` : phase `PLACING` et `ships_to_place` identiques aux deux transports.
+- Parcours Chrome : 22 contrôles, dont la détection d’une sélection perdue à la reprise d’un navire — corrigée en assignant la sélection après l’achèvement du retrait (race de re-rendu).
+
+Référence : `feat(game): add interactive ship placement phase`, commit créé après ces revues.
+
+### Réserve
+
+Les endpoints de flotte sont en `POST` alors que `PUT`/`DELETE` seraient plus idiomatiques : la politique CORS n’autorise que GET et POST, et étendre les méthodes élargirait la surface de prévol pour un bénéfice purement stylistique. Les navires peuvent se toucher, fidèle au placement aléatoire initial — aucune règle d’écartement n’a été ajoutée.
+
 ## Bilan
 
-Le code accepté protège la frontière des données ; le code adapté corrige un défaut reproduit dans les tests ; l’alternative rejetée évite de confondre une réponse perdue avec une commande non exécutée. Les limites restantes sont assumées et documentées : stockage mémoire mono-instance, absence de comptes utilisateurs, duplication de la géométrie des pouvoirs côté client, ambiguïté des navires coulés accolés dans le calcul probabiliste et contrôle navigateur externe.
+Le code accepté protège la frontière des données ; le code adapté corrige un défaut reproduit dans les tests ; l’alternative rejetée évite de confondre une réponse perdue avec une commande non exécutée. Les limites restantes sont assumées et documentées : stockage mémoire mono-instance, absence de comptes utilisateurs, duplication de la géométrie des pouvoirs côté client, ambiguïté des navires coulés accolés dans le calcul probabiliste, endpoints de flotte en POST et contrôle navigateur externe.

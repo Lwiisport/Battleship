@@ -133,6 +133,42 @@ public sealed class GrpcGameTests(ApiFactory factory) : IClassFixture<ApiFactory
             AssertTurn(expected, actual);
     }
 
+    [Fact]
+    public async Task Grpc_web_exposes_the_placement_phase_and_remaining_ships()
+    {
+        using var http = factory.CreateClient();
+        using var created = await http.PostAsJsonAsync("/api/games",
+            new CreateGameRequest("Alice", Difficulty.Normal, ManualPlacement: true));
+        var state = (await created.Content.ReadFromJsonAsync<GameStateDto>(ApiFactory.JsonOptions))!;
+        using var channel = CreateChannel(GrpcWebMode.GrpcWeb);
+        var client = new GameService.GameServiceClient(channel);
+
+        var placing = await client.GetGameStatusAsync(new GetGameStatusRequest { GameId = state.Id.ToString() });
+        Assert.Equal(GamePhase.Placing, placing.Status);
+        Assert.Equal(5, placing.ShipsToPlace.Count);
+        Assert.Equal(Board.Fleet.Select(spec => (int)spec.Kind).OrderBy(kind => kind),
+            placing.ShipsToPlace.Select(spec => (int)spec.Kind).OrderBy(kind => kind));
+        Assert.Equal(Board.Fleet.Select(spec => spec.Size).OrderBy(size => size),
+            placing.ShipsToPlace.Select(spec => spec.Size).OrderBy(size => size));
+
+        using var placed = await http.PostAsJsonAsync($"/api/games/{state.Id}/fleet/place",
+            new PlaceShipRequest(global::BattleShip.Models.Enums.ShipKind.AircraftCarrier, 0, 0));
+        placed.EnsureSuccessStatusCode();
+        var partial = await client.GetGameStatusAsync(new GetGameStatusRequest { GameId = state.Id.ToString() });
+        Assert.Equal(GamePhase.Placing, partial.Status);
+        Assert.Equal(4, partial.ShipsToPlace.Count);
+        Assert.DoesNotContain(partial.ShipsToPlace,
+            spec => spec.Kind == global::BattleShip.Grpc.ShipKind.AircraftCarrier);
+
+        using var random = await http.PostAsync($"/api/games/{state.Id}/fleet/randomize", null);
+        random.EnsureSuccessStatusCode();
+        using var confirm = await http.PostAsync($"/api/games/{state.Id}/fleet/confirm", null);
+        confirm.EnsureSuccessStatusCode();
+        var fighting = await client.GetGameStatusAsync(new GetGameStatusRequest { GameId = state.Id.ToString() });
+        Assert.Equal(GamePhase.InProgress, fighting.Status);
+        Assert.Empty(fighting.ShipsToPlace);
+    }
+
     private static void AssertTurn(TurnDto expected, TurnMessage actual)
     {
         Assert.Equal(expected.Number, actual.Number);

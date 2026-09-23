@@ -1,0 +1,159 @@
+<section class="panel placement-panel" aria-label="Placement de la flotte">
+    <div class="placement-side">
+        <p class="eyebrow">MOUILLAGE</p>
+        <h2>Positionnez votre flotte</h2>
+        <p class="placement-help">Choisissez un navire, pivotez-le au besoin (touche <kbd>R</kbd>),
+            puis cliquez sur la case où mouille sa proue. Cliquez sur un navire posé pour le reprendre.</p>
+        <div class="ship-roster" role="group" aria-label="Navires de la flotte">
+            @foreach (var spec in Board.Fleet)
+            {
+                var placed = IsPlaced(spec.Kind);
+                <button type="button" disabled="@Disabled"
+                        class="ship-pill @(placed ? "placed" : "") @(selected == spec.Kind ? "selected" : "")"
+                        title="@(placed ? "Reprendre ce navire pour le repositionner" : "Placer ce navire")"
+                        @onclick="() => SelectShip(spec.Kind)">
+                    <span>@ShipName(spec.Kind)</span>
+                    <span class="ship-size" aria-label="@($"{spec.Size} cases")">@(new string('▪', spec.Size))</span>
+                    <span class="ship-state" aria-hidden="true">@(placed ? "✓ posé" : "")</span>
+                </button>
+            }
+        </div>
+        <div class="placement-actions">
+            <button type="button" class="secondary" disabled="@(Disabled || selected is null)" @onclick="Rotate">
+                Pivoter : @(vertical ? "Vertical" : "Horizontal")
+            </button>
+            <button type="button" class="secondary" disabled="@(Disabled || ShipsToPlace.Count == 0)"
+                    @onclick="() => OnRandomize.InvokeAsync()">
+                Placer le reste au hasard
+            </button>
+            <button type="button" class="primary" disabled="@(Disabled || ShipsToPlace.Count > 0)"
+                    @onclick="() => OnConfirm.InvokeAsync()">
+                Commencer le combat
+            </button>
+        </div>
+    </div>
+    <div class="placement-grid-wrap" tabindex="0" @onkeydown="RotateKey">
+        <table class="game-grid" aria-label="Grille de placement" @onmouseleave="() => previewAnchor = null">
+            <caption class="sr-only">Grille de placement. Lignes A à J, colonnes 1 à 10.</caption>
+            <thead>
+                <tr>
+                    <td></td>
+                    @for (var column = 1; column <= Board.Size; column++)
+                    {
+                        <th scope="col">@column</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @for (var row = 0; row < Board.Size; row++)
+                {
+                    <tr>
+                        <th scope="row">@((char)('A' + row))</th>
+                        @for (var column = 0; column < Board.Size; column++)
+                        {
+                            var cell = Cells[row * Board.Size + column];
+                            var position = new Position(cell.Row, cell.Column);
+                            <td @onmouseenter="() => Preview(position)">
+                                <button type="button" class="@CellClass(position, cell)" aria-label="@Label(cell)"
+                                        disabled="@(!CanPlaceAt(cell))" @onfocus="() => Preview(position)"
+                                        @onblur="() => previewAnchor = null" @onclick="() => Place(position)">
+                                    <span aria-hidden="true">@(cell.State == CellState.Ship ? "#" : "")</span>
+                                </button>
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="target-hint" aria-live="polite">@PreviewText</p>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<CellDto> Cells { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<ShipSpecification> ShipsToPlace { get; set; } = [];
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<(ShipKind Ship, Position Start, bool Vertical)> OnPlace { get; set; }
+    [Parameter] public EventCallback<ShipKind> OnRemove { get; set; }
+    [Parameter] public EventCallback OnRandomize { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+
+    private ShipKind? selected;
+    private bool vertical;
+    private Position? previewAnchor;
+
+    private bool IsPlaced(ShipKind kind) => ShipsToPlace.All(spec => spec.Kind != kind);
+    private CellDto CellAt(Position position) => Cells[position.Row * Board.Size + position.Column];
+
+    protected override void OnParametersSet()
+    {
+        if (selected is null || IsPlaced(selected.Value))
+            selected = ShipsToPlace.FirstOrDefault()?.Kind;
+        if (selected is null)
+            previewAnchor = null;
+    }
+
+    private async Task SelectShip(ShipKind kind)
+    {
+        if (IsPlaced(kind))
+        {
+            await OnRemove.InvokeAsync(kind);
+        }
+        selected = kind;
+    }
+
+    private void Rotate()
+    {
+        vertical = !vertical;
+    }
+
+    private void RotateKey(KeyboardEventArgs args)
+    {
+        if (args.Key is "r" or "R")
+            Rotate();
+    }
+
+    private void Preview(Position position) => previewAnchor = selected is not null ? position : null;
+
+    private bool CanPlaceAt(CellDto cell) => !Disabled && selected is not null && cell.State == CellState.Water;
+
+    private async Task Place(Position position)
+    {
+        if (selected is not { } kind || Disabled)
+            return;
+        previewAnchor = null;
+        await OnPlace.InvokeAsync((kind, position, vertical));
+    }
+
+    private Position[] Footprint() => previewAnchor is { } anchor && selected is { } kind
+        ? Board.ShipFootprint(kind, anchor, vertical) : [];
+
+    private bool FootprintFits(Position[] footprint) =>
+        footprint.Length > 0 && footprint.All(position => position.IsValid && CellAt(position).State == CellState.Water);
+
+    private string CellClass(Position position, CellDto cell)
+    {
+        var classes = $"cell cell-{cell.State.ToString().ToLowerInvariant()}";
+        if (previewAnchor is null)
+            return classes;
+        var footprint = Footprint();
+        return !footprint.Contains(position) ? classes
+            : FootprintFits(footprint) ? $"{classes} target-preview" : $"{classes} target-invalid";
+    }
+
+    private string PreviewText => previewAnchor is not { } anchor || selected is not { } kind
+        ? "Survolez la grille pour prévisualiser la position du navire."
+        : FootprintFits(Footprint()) ? $"{ShipName(kind)} : {Footprint().Length} case(s) depuis {(char)('A' + anchor.Row)}{anchor.Column + 1}."
+        : "Position invalide : le navire sort de la grille ou chevauche un autre navire.";
+
+    private static string ShipName(ShipKind kind) => kind switch
+    {
+        ShipKind.AircraftCarrier => "Porte-avions",
+        ShipKind.Cruiser => "Croiseur",
+        ShipKind.Destroyer => "Contre-torpilleur",
+        ShipKind.Submarine => "Sous-marin",
+        _ => "Torpilleur"
+    };
+
+    private static string Label(CellDto cell) => $"{(char)('A' + cell.Row)}{cell.Column + 1} : {(cell.State == CellState.Ship ? "navire posé" : "libre")}";
+}

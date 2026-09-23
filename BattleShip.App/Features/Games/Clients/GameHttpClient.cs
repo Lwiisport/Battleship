@@ -15,10 +15,11 @@ public sealed class GameHttpClient(HttpClient http)
         Converters = { new JsonStringEnumConverter() }
     };
 
-    public async Task<GameStateDto> CreateAsync(string playerName, Difficulty difficulty, CancellationToken cancellationToken)
+    public async Task<GameStateDto> CreateAsync(string playerName, Difficulty difficulty,
+        bool manualPlacement, CancellationToken cancellationToken)
     {
         using var response = await http.PostAsJsonAsync("api/games",
-            new CreateGameRequest(playerName, difficulty), JsonOptions, cancellationToken);
+            new CreateGameRequest(playerName, difficulty, manualPlacement), JsonOptions, cancellationToken);
         return await ReadAsync(response, cancellationToken);
     }
 
@@ -39,6 +40,33 @@ public sealed class GameHttpClient(HttpClient http)
     {
         using var response = await http.PostAsJsonAsync($"api/games/{id}/powers",
             new UsePowerRequest(action, position.Row, position.Column), JsonOptions, cancellationToken);
+        return await ReadAsync(response, cancellationToken);
+    }
+
+    public async Task<GameStateDto> PlaceShipAsync(Guid id, ShipKind ship, Position start,
+        bool vertical, CancellationToken cancellationToken)
+    {
+        using var response = await http.PostAsJsonAsync($"api/games/{id}/fleet/place",
+            new PlaceShipRequest(ship, start.Row, start.Column, vertical), JsonOptions, cancellationToken);
+        return await ReadAsync(response, cancellationToken);
+    }
+
+    public async Task<GameStateDto> RemoveShipAsync(Guid id, ShipKind ship, CancellationToken cancellationToken)
+    {
+        using var response = await http.PostAsJsonAsync($"api/games/{id}/fleet/remove",
+            new RemoveShipRequest(ship), JsonOptions, cancellationToken);
+        return await ReadAsync(response, cancellationToken);
+    }
+
+    public async Task<GameStateDto> RandomizeFleetAsync(Guid id, CancellationToken cancellationToken)
+    {
+        using var response = await http.PostAsync($"api/games/{id}/fleet/randomize", null, cancellationToken);
+        return await ReadAsync(response, cancellationToken);
+    }
+
+    public async Task<GameStateDto> ConfirmFleetAsync(Guid id, CancellationToken cancellationToken)
+    {
+        using var response = await http.PostAsync($"api/games/{id}/fleet/confirm", null, cancellationToken);
         return await ReadAsync(response, cancellationToken);
     }
 

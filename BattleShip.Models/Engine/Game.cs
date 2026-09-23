@@ -10,6 +10,7 @@ public sealed class Game
     private readonly Board playerBoard;
     private readonly Board computerBoard;
     private readonly ComputerOpponent opponent;
+    private readonly Random random;
     private readonly List<TurnDto> turns = [];
     private readonly HashSet<Position> mines = [];
     private GameStatus status = GameStatus.InProgress;
@@ -21,7 +22,8 @@ public sealed class Game
     public Game(string playerName, Random? random = null, TimeProvider? clock = null)
         : this(playerName, Difficulty.Easy, random, clock) { }
 
-    public Game(string playerName, Difficulty difficulty, Random? random = null, TimeProvider? clock = null)
+    public Game(string playerName, Difficulty difficulty, Random? random = null, TimeProvider? clock = null,
+        bool manualPlacement = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(playerName);
         if (playerName.Trim().Length > 40)
@@ -29,15 +31,17 @@ public sealed class Game
         if (!Enum.IsDefined(difficulty))
             throw new ArgumentException("La difficulté est inconnue.", nameof(difficulty));
         random ??= Random.Shared;
+        this.random = random;
         Id = Guid.NewGuid();
         CreatedAtUtc = (clock ?? TimeProvider.System).GetUtcNow();
         PlayerName = playerName.Trim();
         Difficulty = difficulty;
-        playerBoard = Board.CreateRandom(random);
+        playerBoard = manualPlacement ? Board.CreateEmpty() : Board.CreateRandom(random);
         computerBoard = Board.CreateRandom(random);
         var targets = playerBoard.AvailableTargets();
         random.Shuffle(targets);
         opponent = new ComputerOpponent(difficulty, new Queue<Position>(targets), random);
+        status = manualPlacement ? GameStatus.PlacingShips : GameStatus.InProgress;
     }
 
     public Guid Id { get; }
@@ -60,10 +64,60 @@ public sealed class Game
         return Play(action, position);
     }
 
+    public GameStateDto PlaceShip(ShipKind kind, Position start, bool vertical)
+    {
+        lock (gate)
+        {
+            RequirePlacing();
+            playerBoard.PlaceShip(kind, start, vertical);
+            return Snapshot();
+        }
+    }
+
+    public GameStateDto RemoveShip(ShipKind kind)
+    {
+        lock (gate)
+        {
+            RequirePlacing();
+            playerBoard.RemoveShip(kind);
+            return Snapshot();
+        }
+    }
+
+    public GameStateDto RandomizeFleet()
+    {
+        lock (gate)
+        {
+            RequirePlacing();
+            playerBoard.Randomize(random);
+            return Snapshot();
+        }
+    }
+
+    public GameStateDto StartBattle()
+    {
+        lock (gate)
+        {
+            RequirePlacing();
+            if (!playerBoard.IsFleetComplete)
+                throw new GameRuleException(GameError.FleetIncomplete, "Tous les navires doivent être posés avant le combat.");
+            status = GameStatus.InProgress;
+            return Snapshot();
+        }
+    }
+
+    private void RequirePlacing()
+    {
+        if (status != GameStatus.PlacingShips)
+            throw new GameRuleException(GameError.FleetAlreadyLocked, "La flotte est déjà engagée au combat.");
+    }
+
     private GameStateDto Play(GameAction action, Position position)
     {
         lock (gate)
         {
+            if (status == GameStatus.PlacingShips)
+                throw new GameRuleException(GameError.GameNotStarted, "Posez votre flotte puis lancez le combat.");
             if (status != GameStatus.InProgress)
                 throw new GameRuleException(GameError.GameFinished, "La partie est terminée.");
             var targets = PowerRules.Targets(action, position);
@@ -123,5 +177,6 @@ public sealed class Game
     private GameStateDto Snapshot() => new(Id, PlayerName, status, turnNumber,
         playerBoard.ToGrid(revealShips: true).Select(cell => cell with { HasMine = mines.Contains(new Position(cell.Row, cell.Column)) }).ToArray(),
         computerBoard.ToGrid(revealShips: false), lastPlayerShot, lastComputerShot, CreatedAtUtc,
-        turns.Select(turn => turn with { PlayerShots = turn.PlayerShots?.ToArray() }).ToArray(), skillPoints, Difficulty);
+        turns.Select(turn => turn with { PlayerShots = turn.PlayerShots?.ToArray() }).ToArray(), skillPoints, Difficulty,
+        playerBoard.ShipsToPlace.ToArray());
 }

@@ -25,7 +25,8 @@
                             <td class="history-actions">
                                 <button type="button" class="secondary" aria-expanded="@(selectedId == entry.State.Id ? "true" : "false")"
                                         aria-controls="archived-game-detail" @onclick="() => selectedId = entry.State.Id">Consulter</button>
-                                @if (entry.State.Status == GameStatus.InProgress && entry.State.Id != ActiveGameId)
+                                @if (entry.State.Status is GameStatus.InProgress or GameStatus.PlacingShips
+                                     && entry.State.Id != ActiveGameId)
                                 {
                                     <button type="button" class="secondary" disabled="@Disabled" @onclick="() => OnResume.InvokeAsync(entry.State.Id)">Reprendre</button>
                                 }
@@ -65,6 +66,7 @@
         GameStatus.PlayerWon => "Victoire",
         GameStatus.ComputerWon => "Défaite",
         GameStatus.Draw => "Match nul",
+        GameStatus.PlacingShips => "Placement",
         _ => "En cours"
     };
     private static string DifficultyText(Difficulty level) => level switch
